@@ -18,8 +18,10 @@ class StreamWidget(QFrame):
         # Khởi tạo VLC instance với tham số giảm độ trễ cho RTSP
         vlc_args = [
             "--no-xlib",
-            "--rtsp-tcp",          # ép dùng TCP cho RTSP, ổn định hơn UDP qua NAT/wifi yếu
-            "--network-caching=300",  # buffer thấp để giảm delay (ms)
+            "--rtsp-tcp",
+            "--network-caching=800",   # tăng buffer để giảm giật khi CPU decode nặng hơn GPU
+            "--codec=avcodec",         # ép dùng module giải mã phần mềm, bỏ hẳn nhánh hardware (d3d11va)
+            "--avcodec-hw=none",
         ]
         self.instance = vlc.Instance(vlc_args)
         self.media_player = self.instance.media_player_new()
