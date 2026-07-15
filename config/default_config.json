@@ -1,0 +1,19 @@
+{
+  "rtsp": {
+    "ip": "192.168.1.100",
+    "port": 554,
+    "username": "admin",
+    "password": "",
+    "stream_type": "sub",
+    "channel": "ch1"
+  },
+  "window": {
+    "width": 320,
+    "height": 200,
+    "pos_x": null,
+    "pos_y": null,
+    "opacity": 0.95,
+    "corner_radius": 16
+  },
+  "autostart": false
+}
