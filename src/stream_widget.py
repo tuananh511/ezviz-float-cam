@@ -65,9 +65,14 @@ class StreamWidget(QFrame):
         # Giữ tham chiếu tới các callback (bắt buộc — nếu không giữ, ctypes
         # sẽ garbage-collect trampoline và libVLC gọi vào vùng nhớ đã giải
         # phóng, gây crash khó hiểu).
-        self._c_lock = vlc.VideoLockCb(self._on_lock)
-        self._c_unlock = vlc.VideoUnlockCb(self._on_unlock)
-        self._c_display = vlc.VideoDisplayCb(self._on_display)
+        # Lưu ý: vlc.VideoLockCb/... ở module-level chỉ là class rỗng cho
+        # mục đích tài liệu (subclass c_void_p, KHÔNG phải kiểu callback
+        # thật) — dùng nó sẽ lỗi "cannot be converted to pointer". Kiểu
+        # callback thật (ctypes.CFUNCTYPE) nằm trong vlc.CallbackDecorators
+        # (alias vlc.cb).
+        self._c_lock = vlc.cb.VideoLockCb(self._on_lock)
+        self._c_unlock = vlc.cb.VideoUnlockCb(self._on_unlock)
+        self._c_display = vlc.cb.VideoDisplayCb(self._on_display)
 
         self.media_player.video_set_format(_CHROMA, RENDER_WIDTH, RENDER_HEIGHT, pitch)
         self.media_player.video_set_callbacks(self._c_lock, self._c_unlock, self._c_display, None)
