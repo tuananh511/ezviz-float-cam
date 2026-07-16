@@ -30,6 +30,11 @@ MIN_WIDTH = 200
 MIN_HEIGHT = 130
 GRIP_SIZE = 18  # vùng tay cầm resize ở góc dưới-phải, tính bằng pixel
 
+# Xem giải thích chi tiết trong showEvent(): acrylic blur thật phá vỡ bo góc
+# vì DWM vẽ blur trên toàn bộ hình chữ nhật cửa sổ, bỏ qua window region.
+# Mặc định TẮT để ưu tiên bo góc hoạt động đúng.
+ENABLE_ACRYLIC_BLUR = False
+
 
 class _Overlay(QWidget):
     """
@@ -152,7 +157,19 @@ class GlassWindow(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        if not self._blur_enabled and sys.platform.startswith("win"):
+        # Đã THỬ và XÁC NHẬN: acrylic blur thật (SetWindowCompositionAttribute)
+        # được DWM vẽ trên toàn bộ hình chữ nhật của cửa sổ, KHÔNG tôn trọng
+        # vùng bo góc (setMask/window region) ở tầng Qt/USER32 — nên khi bật
+        # blur, 4 góc luôn hiện ra vuông dù mask đã đúng. Đây là giới hạn đã
+        # biết của API không chính thức này (không có cách chính thức nào để
+        # "blur đúng theo custom region" trên Windows 10 hiện tại). Vì bo góc
+        # là yêu cầu quan trọng hơn, mình ưu tiên TẮT blur thật, chỉ dùng nền
+        # bán trong suốt do chính Qt vẽ trong paintEvent() — cách này tôn
+        # trọng bo góc hoàn hảo vì không có tầng DWM nào can thiệp.
+        #
+        # Nếu sau này muốn thử lại blur thật (chấp nhận đánh đổi góc vuông),
+        # đổi ENABLE_ACRYLIC_BLUR ở đầu file thành True.
+        if ENABLE_ACRYLIC_BLUR and not self._blur_enabled and sys.platform.startswith("win"):
             self._blur_enabled = enable_acrylic_blur(int(self.winId()))
 
     def paintEvent(self, event):
