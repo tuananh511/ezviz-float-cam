@@ -112,9 +112,15 @@ class StreamWidget(QFrame):
             width_ptr[0] = w
             height_ptr[0] = h
 
-        # căn pitch lên bội số của 32 theo khuyến nghị của libVLC (tránh lỗi
-        # giả định về alignment trong 1 số decoder/filter).
-        pitch = ((w * 4 + 31) // 32) * 32
+        # LƯU Ý QUAN TRỌNG (bug đã gặp thực tế): lúc đầu có làm tròn pitch
+        # lên bội số 32 theo khuyến nghị "nên là bội số 32" trong tài liệu
+        # libVLC — nhưng khi test thật, hình bị "lệch/nghiêng" dần xuống
+        # dưới, đúng dấu hiệu kinh điển của lỗi bytesPerLine (QImage) không
+        # khớp với pitch thật mà libVLC dùng để ghi buffer (nghi ngờ libVLC
+        # không tôn trọng giá trị pitch tự làm tròn, vẫn ghi theo width*4).
+        # Đổi lại dùng ĐÚNG width*4 — khớp với các ví dụ C++/Qt + libVLC đã
+        # xác nhận hoạt động đúng trong thực tế (không làm tròn/căn lề gì).
+        pitch = w * 4
 
         self._width = w
         self._height = h
