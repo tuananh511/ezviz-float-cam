@@ -33,11 +33,15 @@ GRIP_SIZE = 18  # vùng tay cầm resize ở góc dưới-phải, tính bằng p
 
 class _Overlay(QWidget):
     """
-    Lớp phủ trong suốt nằm TRÊN CÙNG (kể cả trên video native window), dùng để
-    bắt sự kiện chuột cho việc kéo-thả / resize. Video của libVLC là 1 native
-    child window (set_hwnd) nên không đi qua hệ thống event của Qt — nếu
-    không có overlay này, người dùng sẽ không kéo được cửa sổ khi bấm lên
-    vùng video.
+    Lớp phủ trong suốt nằm TRÊN CÙNG toàn bộ cửa sổ, dùng để bắt sự kiện
+    chuột cho việc kéo-thả / resize ở bất kỳ đâu (kể cả trên vùng video),
+    đồng thời vẽ chấm trạng thái kết nối + gợi ý tay cầm resize.
+
+    (Ghi chú: từ bản fix video callback của StreamWidget, video không còn là
+    native child window nữa nên về mặt kỹ thuật overlay không còn bắt buộc
+    để tránh việc native window "nuốt" sự kiện chuột như trước — nhưng vẫn
+    giữ lại vì đơn giản hoá logic vẽ status dot/resize-grip ở một chỗ duy
+    nhất, tách biệt khỏi StreamWidget.)
     """
 
     def __init__(self, glass_window: "GlassWindow"):
