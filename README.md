@@ -30,7 +30,7 @@
 ### Cài đặt
 
 ```powershell
-git clone https://github.com/<tai-khoan-cua-ban>/ezviz-float-cam.git
+git clone https://github.com/tuananh511/ezviz-float-cam.git
 cd ezviz-float-cam
 python -m venv venv
 venv\Scripts\activate

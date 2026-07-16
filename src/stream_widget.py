@@ -1,7 +1,10 @@
 """
 stream_widget.py
 Widget Qt nhúng video RTSP qua libVLC.
-Sprint 1: chỉ cần hiển thị được stream, chưa quan tâm giao diện đẹp.
+
+Sprint 2: đổi video output sang wingdi (GDI) vì Direct3D11 vout mặc định
+không tương thích với cửa sổ frameless/translucent của Glass UI — gây màn
+hình đen (có tiếng, không hình) do "buffer deadlock" ở decoder D3D11VA.
 """
 
 import sys
@@ -20,8 +23,13 @@ class StreamWidget(QFrame):
             "--no-xlib",
             "--rtsp-tcp",
             "--network-caching=800",   # tăng buffer để giảm giật khi CPU decode nặng hơn GPU
-            "--codec=avcodec",         # ép dùng module giải mã phần mềm, bỏ hẳn nhánh hardware (d3d11va)
-            "--avcodec-hw=none",
+            "--avcodec-hw=none",       # tắt hardware decode (D3D11VA) — bắt buộc phải tắt khi nhúng
+                                        # video vào cửa sổ frameless/translucent (Sprint 2 Glass UI),
+                                        # nếu không sẽ bị "buffer deadlock prevented" + màn hình đen
+            "--vout=wingdi",           # ép dùng GDI video output thay vì Direct3D11 mặc định.
+                                        # Direct3D11 vout không tương thích tốt với cửa sổ layered/
+                                        # translucent (WS_EX_LAYERED) → gây màn hình đen dù có tiếng.
+                                        # wingdi nặng CPU hơn nhưng ổn định, đủ dùng cho cửa sổ nhỏ.
         ]
         self.instance = vlc.Instance(vlc_args)
         self.media_player = self.instance.media_player_new()
@@ -31,6 +39,9 @@ class StreamWidget(QFrame):
 
     def start(self):
         media = self.instance.media_new(self.rtsp_url)
+        # Đặt lại lần nữa ở cấp media (phòng trường hợp option cấp instance
+        # không được decoder áp dụng đúng lúc mở stream RTSP).
+        media.add_option(":avcodec-hw=none")
         self.media_player.set_media(media)
         self._bind_output_window()
         self.media_player.play()
