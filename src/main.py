@@ -5,6 +5,7 @@ always-on-top, tự phát stream sau khi cửa sổ đã hiện ra.
 """
 
 import sys
+import re
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
 
@@ -12,12 +13,18 @@ from config_loader import load_config, build_rtsp_url
 from glass_window import GlassWindow
 
 
+def _mask_credentials(url: str) -> str:
+    """Che user:pass trong RTSP URL khi in ra console/log, tránh lộ mật khẩu
+    lúc người dùng copy log để báo lỗi."""
+    return re.sub(r"://[^@/]+@", "://***:***@", url)
+
+
 def main():
     app = QApplication(sys.argv)
 
     config = load_config()
     rtsp_url = build_rtsp_url(config["rtsp"])
-    print(f"[INFO] Đang kết nối tới: {rtsp_url}")
+    print(f"[INFO] Đang kết nối tới: {_mask_credentials(rtsp_url)}")
 
     window = GlassWindow(config, rtsp_url)
     window.show()

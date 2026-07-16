@@ -2,26 +2,18 @@
 stream_widget.py
 Widget Qt hiển thị video RTSP qua libVLC.
 
-Sprint 2 (bản fix video cuối): sau khi thử --avcodec-hw=none và
---vout=wingdi vẫn không tránh được lỗi "SetThumbNailClip failed" (xem
-glass_window.py để biết thêm chi tiết lịch sử), chuyển hẳn sang render
-video qua callback bộ nhớ RAM (`video_set_callbacks`) thay vì nhúng cửa sổ
-native — không phụ thuộc bất kỳ module vout nào của libVLC nữa.
-
-Bản fix méo hình (sau khi verify thực tế thấy camera bị kéo dãn/lệch tỉ
-lệ): lúc đầu ép cứng buffer về 640x360 (16:9) bất kể camera thật quay tỉ lệ
-gì, gây méo hình. Giờ dùng `video_set_format_callbacks()` — libVLC sẽ TỰ
-BÁO đúng width/height gốc của stream (qua callback `_format_cb`), mình chỉ
-ép chroma về RV32 (giữ nguyên kích thước), rồi khi vẽ (`paintEvent`) luôn
-giữ đúng tỉ lệ khung hình gốc (letterbox nếu tỉ lệ khung Qt không khớp)
-thay vì kéo dãn lấp đầy toàn bộ ô vuông.
-
-Lưu ý kỹ thuật quan trọng: `vlc.cb.VideoFormatCb` (kiểu callback có sẵn của
-python-vlc) khai báo tham số `chroma` là `ctypes.c_char_p` — kiểu này khi
-gọi vào Python sẽ tự copy ra 1 `bytes` object, KHÔNG cho phép ghi ngược lại
-vùng nhớ gốc để báo cho libVLC biết mình muốn đổi chroma. Vì vậy ở đây tự
-khai báo lại kiểu callback với `chroma` là `ctypes.c_void_p` rồi dùng
-`ctypes.memmove()` ghi trực tiếp 4 byte "RV32" vào đúng địa chỉ đó.
+LỊCH SỬ (Sprint 2 — quan trọng, đọc trước khi sửa gì ở file này):
+Ban đầu nhúng video qua cửa sổ native (`set_hwnd`), hoạt động đúng ở Sprint 1
+nhưng khi thêm Glass UI (cửa sổ frameless/translucent/bo góc) thì bị lỗi
+"SetThumbNailClip failed"/"buffer deadlock" (xung đột Direct3D11 của libVLC
+với loại cửa sổ này). Chuyển sang render qua buffer callback
+(`video_set_callbacks` + `video_set_format_callbacks`, không nhúng cửa sổ
+native nữa) — né được lỗi Direct3D nói trên. Sau đó có hiện tượng hình "lệch"
+— đã nghi ngờ nhiều hướng (pitch, ép --vout=vmem...) nhưng RỐT CUỘC nguyên
+nhân thật nằm ở lớp UI (`glass_window.py`): phần margin viền kính + letterbox
+giữ tỉ lệ chồng lên nhau gây cảm giác lệch, không phải bug ở file này. Vẫn
+giữ lại `--vout=vmem` vì đây là fix đúng/cần thiết cho 1 lỗi thật đã gặp
+(libVLC tự mở thêm 1 cửa sổ video song song nếu không ép rõ module này).
 """
 
 import ctypes
@@ -37,7 +29,9 @@ _FALLBACK_WIDTH = 640   # chỉ dùng nếu vì lý do gì đó libVLC báo widt
 _FALLBACK_HEIGHT = 360
 
 # Tự khai báo lại 2 kiểu callback này (khác với vlc.cb.VideoFormatCb) vì bản
-# có sẵn của python-vlc dùng c_char_p cho chroma — không ghi ngược được.
+# có sẵn của python-vlc dùng c_char_p cho chroma — không cho phép ghi ngược
+# lại giá trị mới vào đúng vùng nhớ mà libVLC cấp (xem giải thích trong
+# _on_format()).
 _FormatCb = ctypes.CFUNCTYPE(
     ctypes.c_uint,                    # trả về: số buffer cấp phát (0 = lỗi)
     ctypes.POINTER(ctypes.c_void_p),  # opaque (in/out)
@@ -52,6 +46,10 @@ _CleanupCb = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 
 class StreamWidget(QFrame):
     _frame_ready = Signal()
+    # Phát ra đúng 1 lần khi biết được kích thước gốc thật của video (từ
+    # libVLC báo về) — GlassWindow lắng nghe để khoá tỉ lệ cửa sổ theo đúng
+    # tỉ lệ camera, tránh phải letterbox (viền đen thừa).
+    native_size_ready = Signal(int, int)
 
     def __init__(self, rtsp_url: str, parent=None):
         super().__init__(parent)
@@ -62,12 +60,19 @@ class StreamWidget(QFrame):
         self._height = 0
         self._pitch = 0
         self._buf = None
+        self._native_size_emitted = False
 
         vlc_args = [
             "--no-xlib",
             "--rtsp-tcp",
             "--network-caching=800",
             "--avcodec-hw=none",  # tắt hardware decode, tránh lỗi D3D11VA deadlock
+            # QUAN TRỌNG: ép rõ ràng chỉ dùng đúng module vout "vmem" (render
+            # qua bộ nhớ, đúng cái mà video_set_callbacks() cần). Nếu không
+            # ép, libVLC có thể tự mở THÊM 1 cửa sổ video thật chạy song song
+            # (đã gặp thật: log "Failed to set on top" + quay lại lỗi D3D11
+            # "buffer deadlock prevented").
+            "--vout=vmem",
         ]
         self.instance = vlc.Instance(vlc_args)
         self.media_player = self.instance.media_player_new()
@@ -86,7 +91,7 @@ class StreamWidget(QFrame):
 
         self._frame_ready.connect(self.update)
 
-        self.setMinimumSize(320, 200)
+        self.setMinimumSize(160, 90)
         self.setStyleSheet("background-color: black;")
 
     def start(self):
@@ -112,20 +117,22 @@ class StreamWidget(QFrame):
             width_ptr[0] = w
             height_ptr[0] = h
 
-        # LƯU Ý QUAN TRỌNG (bug đã gặp thực tế): lúc đầu có làm tròn pitch
-        # lên bội số 32 theo khuyến nghị "nên là bội số 32" trong tài liệu
-        # libVLC — nhưng khi test thật, hình bị "lệch/nghiêng" dần xuống
-        # dưới, đúng dấu hiệu kinh điển của lỗi bytesPerLine (QImage) không
-        # khớp với pitch thật mà libVLC dùng để ghi buffer (nghi ngờ libVLC
-        # không tôn trọng giá trị pitch tự làm tròn, vẫn ghi theo width*4).
-        # Đổi lại dùng ĐÚNG width*4 — khớp với các ví dụ C++/Qt + libVLC đã
-        # xác nhận hoạt động đúng trong thực tế (không làm tròn/căn lề gì).
+        # KHÔNG làm tròn/căn lề pitch — dùng đúng width*4 (đã verify: làm
+        # tròn lên bội số 32 từng gây hiểu nhầm là "lệch hình", dù nguyên
+        # nhân thật nằm ở lớp UI — nhưng width*4 vẫn là giá trị đúng/an toàn
+        # nhất, khớp các ví dụ tham khảo, nên giữ nguyên không làm tròn).
         pitch = w * 4
 
         self._width = w
         self._height = h
         self._pitch = pitch
         self._buf = (ctypes.c_ubyte * (pitch * h))()
+
+        print(f"[INFO] Camera stream kích thước gốc: {w}x{h}")
+
+        if not self._native_size_emitted:
+            self._native_size_emitted = True
+            self.native_size_ready.emit(w, h)
 
         ctypes.memmove(chroma_ptr, _CHROMA, 4)
         pitches_ptr[0] = pitch
@@ -164,8 +171,9 @@ class StreamWidget(QFrame):
         if img is None or img.width() == 0 or img.height() == 0:
             return
 
-        # Giữ đúng tỉ lệ khung hình gốc của camera — không kéo dãn lấp đầy
-        # toàn bộ ô, tránh méo hình khi tỉ lệ widget khác tỉ lệ video thật.
+        # Giữ đúng tỉ lệ khung hình gốc (letterbox nếu tỉ lệ widget lệch tỉ
+        # lệ video thật — bình thường ở lần vẽ đầu tiên trước khi
+        # GlassWindow kịp khoá tỉ lệ cửa sổ theo native_size_ready).
         img_ratio = img.width() / img.height()
         target_ratio = target.width() / target.height() if target.height() else img_ratio
 

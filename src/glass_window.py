@@ -1,38 +1,40 @@
 """
-glass_window.py — Sprint 2: Glass UI
+glass_window.py — Sprint 2: Glass UI (bản cuối)
 
-Cửa sổ nổi kiểu "kính mờ":
-- Frameless, always-on-top, bo góc, nền translucent.
-- Trên Windows: bật acrylic blur thật (blur nội dung phía sau cửa sổ) qua
-  windows_blur.py. Trên OS khác (dev/test): fallback vẽ nền màu bán trong
-  suốt (không có blur thật, nhưng vẫn xem được layout/hành vi).
-- Video (StreamWidget) được đặt lùi vào trong một khoảng margin nhỏ so với
-  viền cửa sổ, để lộ ra viền "kính" xung quanh và đảm bảo 4 góc vuông của
-  video native window luôn nằm trong vùng mask bo góc (không bị lòi góc).
-- Kéo-thả: giữ chuột trái bất kỳ đâu trên cửa sổ (kể cả trên video, nhờ lớp
-  overlay trong suốt phủ toàn bộ cửa sổ) để di chuyển.
-- Resize: kéo tại tay cầm nhỏ ở góc dưới-phải.
-- Vị trí & kích thước cửa sổ được lưu lại vào config khi người dùng thả
-  chuột, để lần mở sau giữ nguyên chỗ cũ.
+Cửa sổ nổi: frameless, always-on-top, bo góc, nền translucent bán trong
+suốt (không dùng acrylic blur thật — xem lý do trong showEvent()).
+
+Video (StreamWidget) phủ kín sát viền cửa sổ (không có margin/viền kính
+riêng — theo lựa chọn thiết kế cuối cùng, video edge-to-edge, 4 góc video bị
+chính vùng mask bo tròn của cửa sổ cắt theo).
+
+Cửa sổ tự khoá tỉ lệ khung hình theo đúng tỉ lệ thật của camera (báo qua
+StreamWidget.native_size_ready) khi resize — để không bao giờ phải hiện viền
+đen letterbox thừa.
 """
 
 import sys
 
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Qt, QPoint, QRect, QSize, QTimer
-from PySide6.QtGui import QPainter, QColor, QPainterPath, QRegion, QCursor
+from PySide6.QtCore import Qt, QPoint, QRect, QTimer
+from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QRegion
 
 from stream_widget import StreamWidget
 from config_loader import save_config
 from windows_blur import enable_acrylic_blur
 
 MIN_WIDTH = 200
-MIN_HEIGHT = 130
+MIN_HEIGHT = 120
 GRIP_SIZE = 18  # vùng tay cầm resize ở góc dưới-phải, tính bằng pixel
+DOT_INSET = 14  # khoảng cách chấm trạng thái tới góc, tránh bị vùng bo góc cắt
 
-# Xem giải thích chi tiết trong showEvent(): acrylic blur thật phá vỡ bo góc
-# vì DWM vẽ blur trên toàn bộ hình chữ nhật cửa sổ, bỏ qua window region.
-# Mặc định TẮT để ưu tiên bo góc hoạt động đúng.
+# Đã THỬ và XÁC NHẬN: acrylic blur thật (SetWindowCompositionAttribute) được
+# DWM vẽ trên toàn bộ hình chữ nhật của cửa sổ, KHÔNG tôn trọng vùng bo góc
+# (setMask/window region) ở tầng Qt/USER32 — nên khi bật blur, 4 góc luôn
+# hiện ra vuông dù mask đã đúng. Đây là giới hạn đã biết của API không chính
+# thức này. Vì bo góc là yêu cầu quan trọng hơn, mặc định TẮT blur thật, chỉ
+# dùng nền bán trong suốt do chính Qt vẽ (paintEvent) — tôn trọng bo góc
+# hoàn hảo vì không có tầng DWM nào can thiệp.
 ENABLE_ACRYLIC_BLUR = False
 
 
@@ -41,12 +43,6 @@ class _Overlay(QWidget):
     Lớp phủ trong suốt nằm TRÊN CÙNG toàn bộ cửa sổ, dùng để bắt sự kiện
     chuột cho việc kéo-thả / resize ở bất kỳ đâu (kể cả trên vùng video),
     đồng thời vẽ chấm trạng thái kết nối + gợi ý tay cầm resize.
-
-    (Ghi chú: từ bản fix video callback của StreamWidget, video không còn là
-    native child window nữa nên về mặt kỹ thuật overlay không còn bắt buộc
-    để tránh việc native window "nuốt" sự kiện chuột như trước — nhưng vẫn
-    giữ lại vì đơn giản hoá logic vẽ status dot/resize-grip ở một chỗ duy
-    nhất, tách biệt khỏi StreamWidget.)
     """
 
     def __init__(self, glass_window: "GlassWindow"):
@@ -56,8 +52,6 @@ class _Overlay(QWidget):
         self.setMouseTracking(True)
 
     def paintEvent(self, event):
-        # Overlay trong suốt hoàn toàn, không vẽ gì — chỉ để nhận sự kiện chuột.
-        # Có thể vẽ chấm trạng thái kết nối ở góc trên-trái tại đây.
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         self.glass_window.paint_status_dot(painter)
@@ -80,9 +74,17 @@ class GlassWindow(QWidget):
         win_cfg = config.get("window", {})
         self.corner_radius = win_cfg.get("corner_radius", 16)
         self.opacity = win_cfg.get("opacity", 0.95)
-        # margin phải >= corner_radius để góc vuông của video không lòi ra
-        # ngoài vùng mask bo tròn của cửa sổ.
-        self.video_margin = max(8, self.corner_radius)
+
+        # Video phủ kín sát viền cửa sổ — không có margin riêng.
+        self.video_margin = 0
+
+        # Tỉ lệ khung hình thật của camera (width/height) — chưa biết cho
+        # tới khi StreamWidget báo qua native_size_ready(). None = chưa biết,
+        # cho phép resize tự do tạm thời.
+        self._video_aspect: float | None = None
+        self._had_saved_size = (
+            win_cfg.get("width") is not None and win_cfg.get("height") is not None
+        )
 
         self.setWindowTitle("EzvizFloatCam")
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -99,6 +101,7 @@ class GlassWindow(QWidget):
         self._restore_position(win_cfg)
 
         self.stream_widget = StreamWidget(rtsp_url, self)
+        self.stream_widget.native_size_ready.connect(self._on_video_native_size)
         self.overlay = _Overlay(self)
 
         self._drag_pos: QPoint | None = None
@@ -123,11 +126,24 @@ class GlassWindow(QWidget):
         if pos_x is not None and pos_y is not None:
             self.move(int(pos_x), int(pos_y))
             return
-        # Mặc định: góc trên-phải màn hình, cách mép 24px.
         screen = self.screen() if hasattr(self, "screen") else None
         if screen is not None:
             geo = screen.availableGeometry()
             self.move(geo.right() - self.width() - 24, geo.top() + 24)
+
+    # ---------- khoá tỉ lệ khung hình theo camera ----------
+
+    def _on_video_native_size(self, w: int, h: int):
+        if not w or not h:
+            return
+        self._video_aspect = w / h
+        # Nếu cửa sổ chưa từng có kích thước người dùng tự lưu trước đó
+        # (lần đầu chạy), tự động chỉnh cửa sổ về đúng tỉ lệ camera ngay khi
+        # biết được — tránh phải hiện viền đen letterbox ngay từ đầu.
+        if not self._had_saved_size:
+            target_w = self.width()
+            target_h = max(MIN_HEIGHT, int(round(target_w / self._video_aspect)))
+            self.resize(target_w, target_h)
 
     # ---------- layout & hiển thị ----------
 
@@ -157,25 +173,10 @@ class GlassWindow(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Đã THỬ và XÁC NHẬN: acrylic blur thật (SetWindowCompositionAttribute)
-        # được DWM vẽ trên toàn bộ hình chữ nhật của cửa sổ, KHÔNG tôn trọng
-        # vùng bo góc (setMask/window region) ở tầng Qt/USER32 — nên khi bật
-        # blur, 4 góc luôn hiện ra vuông dù mask đã đúng. Đây là giới hạn đã
-        # biết của API không chính thức này (không có cách chính thức nào để
-        # "blur đúng theo custom region" trên Windows 10 hiện tại). Vì bo góc
-        # là yêu cầu quan trọng hơn, mình ưu tiên TẮT blur thật, chỉ dùng nền
-        # bán trong suốt do chính Qt vẽ trong paintEvent() — cách này tôn
-        # trọng bo góc hoàn hảo vì không có tầng DWM nào can thiệp.
-        #
-        # Nếu sau này muốn thử lại blur thật (chấp nhận đánh đổi góc vuông),
-        # đổi ENABLE_ACRYLIC_BLUR ở đầu file thành True.
         if ENABLE_ACRYLIC_BLUR and not self._blur_enabled and sys.platform.startswith("win"):
             self._blur_enabled = enable_acrylic_blur(int(self.winId()))
 
     def paintEvent(self, event):
-        # Vẽ nền "kính": nếu acrylic blur (Windows) đã bật, chỉ cần phủ 1 lớp
-        # màu rất mỏng để giữ viền rõ; nếu không (fallback OS khác / blur lỗi),
-        # vẽ nền bán trong suốt đậm hơn để vẫn nhìn được layout.
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
@@ -200,8 +201,8 @@ class GlassWindow(QWidget):
         is_playing = self.stream_widget.is_playing()
         color = QColor(64, 200, 110) if is_playing else QColor(220, 70, 70)
         radius = 5
-        cx = self.video_margin + radius + 4
-        cy = self.video_margin + radius + 4
+        cx = DOT_INSET
+        cy = DOT_INSET
         painter.setBrush(color)
         painter.setPen(Qt.NoPen)
         painter.drawEllipse(QPoint(cx, cy), radius, radius)
@@ -212,7 +213,6 @@ class GlassWindow(QWidget):
         painter.setBrush(grip_color)
         x0 = self.width() - GRIP_SIZE
         y0 = self.height() - GRIP_SIZE
-        # 3 chấm nhỏ chéo góc để gợi ý có thể kéo resize ở đây
         for i in range(3):
             offset = i * 5
             painter.drawEllipse(
@@ -249,7 +249,12 @@ class GlassWindow(QWidget):
         if self._resizing and self._resize_start_geo is not None:
             delta = global_pos - self._resize_start_mouse
             new_w = max(MIN_WIDTH, self._resize_start_geo.width() + delta.x())
-            new_h = max(MIN_HEIGHT, self._resize_start_geo.height() + delta.y())
+            if self._video_aspect:
+                # Khoá tỉ lệ theo đúng camera — chỉ chiều rộng quyết định,
+                # chiều cao tự tính theo, không bao giờ bị lệch tỉ lệ nữa.
+                new_h = max(MIN_HEIGHT, int(round(new_w / self._video_aspect)))
+            else:
+                new_h = max(MIN_HEIGHT, self._resize_start_geo.height() + delta.y())
             self.resize(new_w, new_h)
             return
 
@@ -257,7 +262,6 @@ class GlassWindow(QWidget):
             self.move(global_pos - self._drag_pos)
             return
 
-        # cập nhật con trỏ chuột khi rê qua tay cầm resize
         pos = event.position().toPoint()
         if self._grip_rect().contains(pos):
             self.overlay.setCursor(QCursor(Qt.SizeFDiagCursor))
@@ -271,6 +275,7 @@ class GlassWindow(QWidget):
         self._resize_start_geo = None
         self._resize_start_mouse = None
         if was_active:
+            self._had_saved_size = True
             self._save_geometry_to_config()
 
     def _save_geometry_to_config(self):
