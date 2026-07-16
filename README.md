@@ -2,7 +2,7 @@
 
 Ứng dụng Windows nhỏ gọn, hiển thị camera Ezviz (qua RTSP) dưới dạng cửa sổ nổi ở góc màn hình, luôn hiển thị phía trên các cửa sổ khác.
 
-> ⚠️ **Trạng thái hiện tại: Sprint 1 — bản test lõi (core viewer)**
+> ⚠️ **Trạng thái hiện tại: Sprint 2 — Giao diện kính mờ (Glass UI)**
 > Ứng dụng mới chỉ chạy được từ source code Python, **chưa có file `.exe` để tải về dùng ngay**. Bản cài đặt `.exe` sẽ có ở các sprint sau (đóng gói + installer). Người dùng phổ thông vui lòng chờ bản Release chính thức.
 
 ---
@@ -10,7 +10,7 @@
 ## Tính năng dự kiến (đang phát triển dần theo sprint)
 
 - [x] Kết nối và hiển thị stream RTSP từ camera Ezviz
-- [ ] Giao diện bo góc, hiệu ứng kính mờ (glass), luôn nổi trên cùng
+- [x] Giao diện bo góc, hiệu ứng kính mờ (glass), luôn nổi trên cùng, kéo-thả & resize góc
 - [ ] Icon khay hệ thống — bật/tắt stream, ẩn/hiện cửa sổ
 - [ ] Cấu hình kết nối (IP/user/pass) qua giao diện, không cần sửa file
 - [ ] Tuỳ chọn khởi động cùng Windows
@@ -62,6 +62,10 @@ Chạy thử 1 lần để ứng dụng tự tạo file config tại `%APPDATA%\
 cd src
 python main.py
 ```
+
+Cửa sổ hiện ra sẽ ở dạng nổi, không viền, bo góc, luôn nằm trên cùng — kéo-thả bất kỳ đâu trên cửa sổ (kể cả trên video) để di chuyển, kéo ở góc dưới-phải để đổi kích thước. Vị trí và kích thước sẽ tự lưu lại cho lần mở sau.
+
+> Hiệu ứng "kính mờ" (blur nội dung phía sau cửa sổ) chỉ hoạt động thật trên Windows 10/11. Nếu chạy thử trên hệ điều hành khác, ứng dụng sẽ tự chuyển sang nền bán trong suốt thường (không có blur).
 
 ---
 
