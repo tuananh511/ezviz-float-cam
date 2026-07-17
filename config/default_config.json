@@ -15,5 +15,11 @@
     "opacity": 0.95,
     "corner_radius": 16
   },
-  "autostart": false
+  "autostart": false,
+  "audio": {
+    "muted": false
+  },
+  "recording": {
+    "save_dir": ""
+  }
 }

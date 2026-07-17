@@ -40,8 +40,10 @@ def main():
 
     tray = TrayIcon(window, app)  # noqa: F841 — giữ tham chiếu sống suốt vòng đời app
 
-    # bắt đầu phát sau khi cửa sổ đã hiện ra (tránh lỗi bind window handle quá sớm)
-    QTimer.singleShot(300, window.stream_widget.start)
+    # bắt đầu phát sau khi cửa sổ đã hiện ra (tránh lỗi bind window handle quá
+    # sớm); start_stream() cũng áp dụng lại trạng thái mute đã lưu từ lần
+    # trước (Sprint 5.5).
+    QTimer.singleShot(300, window.start_stream)
 
     sys.exit(app.exec())
 

@@ -15,11 +15,12 @@ import vlc
 
 from PySide6.QtWidgets import (
     QDialog, QFormLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QSpinBox,
-    QComboBox, QCheckBox, QPushButton, QLabel, QDialogButtonBox,
+    QComboBox, QCheckBox, QPushButton, QLabel, QDialogButtonBox, QFileDialog,
 )
 from PySide6.QtCore import QTimer
 
 from config_loader import build_rtsp_url
+from recorder import default_recording_dir
 import autostart
 
 _TEST_TIMEOUT_MS = 6000
@@ -84,6 +85,26 @@ class SettingsDialog(QDialog):
         self.autostart_check = QCheckBox("Khởi động cùng Windows")
         self.autostart_check.setChecked(autostart.is_autostart_enabled())
 
+        # Sprint 5.5: thư mục lưu video khi bấm nút "Ghi hình khẩn cấp" trên
+        # cửa sổ nổi. Để trống = lúc bấm ghi sẽ tự dùng thư mục gợi ý mặc
+        # định (%USERPROFILE%\Videos\EzvizFloatCam) — ô này chỉ HIỂN THỊ gợi
+        # ý qua placeholder, KHÔNG tự ghi giá trị đó vào config nếu người
+        # dùng chưa bấm "Dùng thư mục gợi ý" hoặc tự chọn qua "Duyệt...".
+        recording_cfg = config.get("recording", {})
+        self.record_dir_edit = QLineEdit(recording_cfg.get("save_dir", ""))
+        self.record_dir_edit.setPlaceholderText(str(default_recording_dir()))
+        self.record_dir_edit.setReadOnly(True)
+
+        self.record_browse_btn = QPushButton("Duyệt...")
+        self.record_browse_btn.clicked.connect(self._browse_record_dir)
+        self.record_default_btn = QPushButton("Dùng thư mục gợi ý")
+        self.record_default_btn.clicked.connect(self._use_default_record_dir)
+
+        record_dir_row = QHBoxLayout()
+        record_dir_row.addWidget(self.record_dir_edit)
+        record_dir_row.addWidget(self.record_browse_btn)
+        record_dir_row.addWidget(self.record_default_btn)
+
         form = QFormLayout()
         form.addRow("Địa chỉ IP camera:", self.ip_edit)
         form.addRow("Port:", self.port_spin)
@@ -93,6 +114,7 @@ class SettingsDialog(QDialog):
         form.addRow("Loại luồng:", self.stream_combo)
         form.addRow("Channel (nâng cao):", self.channel_edit)
         form.addRow("", self.autostart_check)
+        form.addRow("Thư mục lưu ghi hình khẩn cấp:", record_dir_row)
 
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
@@ -144,6 +166,24 @@ class SettingsDialog(QDialog):
         """Gọi sau khi exec() trả về Accepted để biết checkbox 'Khởi động
         cùng Windows' có đang được tick hay không."""
         return self.autostart_check.isChecked()
+
+    def get_recording_config(self) -> dict:
+        """Gọi sau khi exec() trả về Accepted để lấy thư mục lưu ghi hình
+        khẩn cấp mới (Sprint 5.5)."""
+        return {"save_dir": self.record_dir_edit.text().strip()}
+
+    # ---------- thư mục lưu ghi hình khẩn cấp (Sprint 5.5) ----------
+
+    def _browse_record_dir(self):
+        start_dir = self.record_dir_edit.text().strip() or str(default_recording_dir())
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Chọn thư mục lưu ghi hình khẩn cấp", start_dir,
+        )
+        if chosen:
+            self.record_dir_edit.setText(chosen)
+
+    def _use_default_record_dir(self):
+        self.record_dir_edit.setText(str(default_recording_dir()))
 
     # ---------- kiểm tra kết nối ----------
 

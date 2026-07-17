@@ -119,6 +119,9 @@ class TrayIcon(QSystemTrayIcon):
                 autostart_wanted if applied_ok else autostart.is_autostart_enabled()
             )
 
+            # Sprint 5.5: thư mục lưu ghi hình khẩn cấp.
+            self.window.config["recording"] = dialog.get_recording_config()
+
             save_config(self.window.config)
             new_url = build_rtsp_url(new_rtsp)
             self.window.apply_new_rtsp(new_url)

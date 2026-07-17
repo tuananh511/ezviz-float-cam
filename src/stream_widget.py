@@ -112,6 +112,14 @@ class StreamWidget(QFrame):
     def is_playing(self) -> bool:
         return bool(self.media_player.is_playing())
 
+    def set_muted(self, muted: bool):
+        """Bật/tắt tiếng — chỉ ảnh hưởng audio output, không đụng gì tới
+        pipeline video (video_set_callbacks) ở trên."""
+        self.media_player.audio_set_mute(muted)
+
+    def is_muted(self) -> bool:
+        return bool(self.media_player.audio_get_mute())
+
     # ---------- callback libVLC (chạy trên luồng nội bộ của libVLC, không
     # được đụng trực tiếp vào Qt GUI ở đây — chỉ ghi buffer / emit signal) ----------
 

@@ -15,11 +15,14 @@ StreamWidget.native_size_ready) khi resize — để không bao giờ phải hi�
 
 import sys
 
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Qt, QPoint, QRect, QTimer
-from PySide6.QtGui import QPainter, QColor, QCursor, QPainterPath, QRegion
+from PySide6.QtGui import (
+    QPainter, QColor, QPen, QCursor, QPainterPath, QRegion, QPolygon,
+)
 
 from stream_widget import StreamWidget
+from recorder import EmergencyRecorder
 from config_loader import save_config
 from windows_blur import enable_acrylic_blur
 
@@ -27,6 +30,12 @@ MIN_WIDTH = 200
 MIN_HEIGHT = 120
 GRIP_SIZE = 18  # vùng tay cầm resize ở góc dưới-phải, tính bằng pixel
 DOT_INSET = 14  # khoảng cách chấm trạng thái tới góc, tránh bị vùng bo góc cắt
+
+# Sprint 5.5: 2 icon hành động (ghi hình khẩn cấp + mute) đặt góc trên-phải,
+# vẽ động bằng QPainter (không cần file ảnh rời), giống tinh thần icon tray.
+ICON_SIZE = 20
+ICON_MARGIN = 10
+ICON_GAP = 6
 
 # Đã THỬ và XÁC NHẬN: acrylic blur thật (SetWindowCompositionAttribute) được
 # DWM vẽ trên toàn bộ hình chữ nhật của cửa sổ, KHÔNG tôn trọng vùng bo góc
@@ -56,6 +65,7 @@ class _Overlay(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         self.glass_window.paint_status_dot(painter)
         self.glass_window.paint_resize_grip(painter)
+        self.glass_window.paint_action_icons(painter)
 
     def mousePressEvent(self, event):
         self.glass_window.handle_mouse_press(event)
@@ -103,6 +113,13 @@ class GlassWindow(QWidget):
         self.stream_widget = StreamWidget(rtsp_url, self)
         self.stream_widget.native_size_ready.connect(self._on_video_native_size)
         self.overlay = _Overlay(self)
+
+        # Sprint 5.5: ghi hình khẩn cấp — phiên libVLC RIÊNG, luôn dùng luồng
+        # main chất lượng cao, độc lập hoàn toàn với stream_widget đang xem.
+        self.recorder = EmergencyRecorder(self)
+        self.recorder.recording_started.connect(self._on_recording_started)
+        self.recorder.recording_stopped.connect(self._on_recording_stopped)
+        self.recorder.recording_error.connect(self._on_recording_error)
 
         self._drag_pos: QPoint | None = None
         self._resizing = False
@@ -227,6 +244,95 @@ class GlassWindow(QWidget):
                 2, 2,
             )
 
+    # ---------- icon hành động: ghi hình khẩn cấp + mute (Sprint 5.5) ----------
+
+    def _record_rect(self) -> QRect:
+        # icon bên trái trong cặp 2 icon, góc trên-phải
+        x = self.width() - ICON_MARGIN - ICON_SIZE * 2 - ICON_GAP
+        return QRect(x, ICON_MARGIN, ICON_SIZE, ICON_SIZE)
+
+    def _mute_rect(self) -> QRect:
+        # icon bên phải trong cặp 2 icon, góc trên-phải
+        x = self.width() - ICON_MARGIN - ICON_SIZE
+        return QRect(x, ICON_MARGIN, ICON_SIZE, ICON_SIZE)
+
+    def paint_action_icons(self, painter: QPainter):
+        self._draw_record_icon(painter, self._record_rect())
+        self._draw_mute_icon(painter, self._mute_rect())
+
+    def _draw_record_icon(self, painter: QPainter, rect: QRect):
+        recording = self.recorder.is_recording()
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 110))
+        painter.drawEllipse(rect)
+
+        dot_color = QColor(220, 40, 40) if recording else QColor(255, 255, 255, 210)
+        painter.setBrush(dot_color)
+        inset = 5
+        painter.drawEllipse(rect.adjusted(inset, inset, -inset, -inset))
+
+        if recording:
+            elapsed = self.recorder.elapsed_seconds()
+            mm, ss = divmod(elapsed, 60)
+            text = f"REC {mm:02d}:{ss:02d}"
+            font = painter.font()
+            font.setPointSize(8)
+            painter.setFont(font)
+            painter.setPen(QColor(255, 255, 255, 235))
+            text_rect = QRect(rect.left() - 92, rect.top(), 86, rect.height())
+            painter.drawText(text_rect, Qt.AlignRight | Qt.AlignVCenter, text)
+
+    def _draw_mute_icon(self, painter: QPainter, rect: QRect):
+        muted = self.stream_widget.is_muted()
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 110))
+        painter.drawEllipse(rect)
+
+        color = QColor(220, 70, 70) if muted else QColor(255, 255, 255, 220)
+        cx, cy = rect.center().x(), rect.center().y()
+
+        # hình loa đơn giản: 1 hình vuông nhỏ nối 1 tam giác (không cần ảnh)
+        painter.setBrush(color)
+        painter.drawRect(cx - 6, cy - 3, 4, 6)
+        triangle = QPolygon([
+            QPoint(cx - 2, cy - 3), QPoint(cx - 2, cy + 3),
+            QPoint(cx + 4, cy + 7), QPoint(cx + 4, cy - 7),
+        ])
+        painter.drawPolygon(triangle)
+
+        if muted:
+            pen = QPen(QColor(220, 70, 70), 2)
+            painter.setPen(pen)
+            painter.drawLine(rect.left() + 3, rect.top() + 3, rect.right() - 3, rect.bottom() - 3)
+
+    def toggle_mute(self):
+        muted = not self.stream_widget.is_muted()
+        self.stream_widget.set_muted(muted)
+        audio_cfg = self.config.setdefault("audio", {})
+        audio_cfg["muted"] = muted
+        save_config(self.config)
+        self.overlay.update()
+
+    def toggle_recording(self):
+        if self.recorder.is_recording():
+            self.recorder.stop()
+        else:
+            rtsp_cfg = self.config.get("rtsp", {})
+            save_dir = self.config.get("recording", {}).get("save_dir", "")
+            self.recorder.start(rtsp_cfg, save_dir)
+
+    def _on_recording_started(self, path: str):
+        self.overlay.update()
+
+    def _on_recording_stopped(self, path: str):
+        self.overlay.update()
+
+    def _on_recording_error(self, message: str):
+        self.overlay.update()
+        QMessageBox.warning(self, "Ghi hình khẩn cấp", message)
+
     # ---------- kéo-thả & resize (nhận sự kiện từ overlay) ----------
 
     def _grip_rect(self) -> QRect:
@@ -239,6 +345,15 @@ class GlassWindow(QWidget):
         if event.button() != Qt.LeftButton:
             return
         pos = event.position().toPoint()
+        # icon hành động có ưu tiên cao nhất — bấm trúng icon thì KHÔNG bắt
+        # đầu kéo-thả cửa sổ (2 icon nằm ở vùng góc trên-phải, không chồng
+        # lấn với tay cầm resize ở góc dưới-phải nên không xung đột logic).
+        if self._record_rect().contains(pos):
+            self.toggle_recording()
+            return
+        if self._mute_rect().contains(pos):
+            self.toggle_mute()
+            return
         if self._grip_rect().contains(pos):
             self._resizing = True
             self._resize_start_geo = self.geometry()
@@ -295,7 +410,17 @@ class GlassWindow(QWidget):
         (SettingsDialog, Sprint 4) — dừng stream cũ, đổi URL, phát lại."""
         self.stream_widget.stop()
         self.stream_widget.set_rtsp_url(new_url)
-        QTimer.singleShot(300, self.stream_widget.start)
+        QTimer.singleShot(300, self._start_stream_and_restore_audio)
+
+    def start_stream(self):
+        """Gọi từ main.py lúc khởi động app lần đầu — phát stream và áp
+        dụng lại trạng thái mute đã lưu từ lần trước (Sprint 5.5)."""
+        self._start_stream_and_restore_audio()
+
+    def _start_stream_and_restore_audio(self):
+        self.stream_widget.start()
+        audio_cfg = self.config.get("audio", {})
+        self.stream_widget.set_muted(bool(audio_cfg.get("muted", False)))
 
     def request_quit(self):
         """Gọi từ tray khi người dùng thật sự muốn thoát app (khác với đóng
@@ -313,6 +438,11 @@ class GlassWindow(QWidget):
             event.ignore()
             self.hide()
             return
+        if self.recorder.is_recording():
+            # Dừng ghi hình đúng cách trước khi thoát hẳn — nếu không, file
+            # .mp4 đang ghi dở có thể bị hỏng/không đọc được (mux chưa được
+            # đóng gói hoàn chỉnh).
+            self.recorder.stop()
         self.stream_widget.stop()
         self.status_timer.stop()
         self._save_geometry_to_config()

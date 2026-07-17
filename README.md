@@ -2,7 +2,7 @@
 
 Ứng dụng Windows nhỏ gọn, hiển thị camera Ezviz (qua RTSP) dưới dạng cửa sổ nổi ở góc màn hình, luôn hiển thị phía trên các cửa sổ khác.
 
-> ⚠️ **Trạng thái hiện tại: Sprint 4 — Cài đặt kết nối qua giao diện**
+> ⚠️ **Trạng thái hiện tại: Sprint 5.5 — Mute & Ghi hình khẩn cấp**
 > Ứng dụng mới chỉ chạy được từ source code Python, **chưa có file `.exe` để tải về dùng ngay**. Bản cài đặt `.exe` sẽ có ở các sprint sau (đóng gói + installer). Người dùng phổ thông vui lòng chờ bản Release chính thức.
 
 ---
@@ -13,7 +13,9 @@
 - [x] Giao diện bo góc, hiệu ứng kính mờ (glass), luôn nổi trên cùng, kéo-thả & resize góc
 - [x] Icon khay hệ thống — bật/tắt stream, ẩn/hiện cửa sổ, thoát
 - [x] Cấu hình kết nối (IP/user/pass) qua giao diện, không cần sửa file
-- [ ] Tuỳ chọn khởi động cùng Windows
+- [x] Tuỳ chọn khởi động cùng Windows
+- [x] Bật/tắt tiếng (mute) — icon trên cửa sổ nổi
+- [x] Ghi hình khẩn cấp — luồng chất lượng cao, lưu file .mp4 cục bộ
 - [ ] File cài đặt `.exe` — không cần cài Python
 - [ ] Gỡ cài đặt chuẩn qua Control Panel / Revo Uninstaller
 
@@ -83,6 +85,17 @@ Cửa sổ hiện ra sẽ ở dạng nổi, không viền, bo góc, luôn nằm 
   - **Thoát** — thoát hẳn ứng dụng (đây là cách duy nhất để thoát app).
 
 > Lưu ý: cửa sổ camera không có nút đóng/titlebar (frameless). Nếu bấm Alt+F4 hoặc lỡ đóng cửa sổ bằng cách khác, app **chỉ ẩn cửa sổ đi** (icon khay vẫn còn) chứ không thoát hẳn — bấm lại vào icon khay hoặc chọn "Hiện cửa sổ" để mở lại.
+
+### Mute & Ghi hình khẩn cấp
+
+Góc trên-phải cửa sổ camera có 2 icon nhỏ:
+
+- **Icon loa** (bên phải) — bật/tắt tiếng. Trạng thái được lưu lại, lần mở app sau vẫn giữ nguyên.
+- **Icon chấm tròn** (bên trái, cạnh icon loa) — bấm để bắt đầu **ghi hình khẩn cấp**: app mở 1 kết nối RTSP RIÊNG tới **luồng chất lượng cao (main)** của camera (khác với luồng nhẹ đang xem trực tiếp) và ghi thẳng ra file `.mp4` cục bộ, kèm chữ `REC mm:ss` hiện bên cạnh trong lúc đang ghi. Bấm lại icon để dừng và lưu file.
+  - Video được lưu vào thư mục cấu hình ở **Cài đặt... → Thư mục lưu ghi hình khẩn cấp** (nút "Duyệt..." để tự chọn nơi lưu, hoặc "Dùng thư mục gợi ý" để dùng `%USERPROFILE%\Videos\EzvizFloatCam`). Nếu chưa từng cấu hình, app tự dùng thư mục gợi ý này khi bấm ghi lần đầu.
+  - Tên file dạng `emergency_YYYYMMDD_HHMMSS.mp4`.
+  - Ghi hình dùng cơ chế remux trực tiếp (không giải mã lại), nên rất nhẹ CPU và không ảnh hưởng tới luồng đang xem trong cửa sổ chính.
+  - Nếu mất kết nối tới luồng main giữa chừng (vd sai cấu hình, mất mạng), app sẽ báo lỗi bằng hộp thoại và dừng ghi — file đã ghi tới thời điểm đó vẫn được giữ lại.
 
 ---
 
