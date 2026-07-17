@@ -110,6 +110,9 @@ class GlassWindow(QWidget):
         self._resize_start_mouse: QPoint | None = None
 
         self._blur_enabled = False
+        # Chỉ True khi người dùng chọn "Thoát" ở menu khay hệ thống — xem
+        # closeEvent()/request_quit() bên dưới.
+        self._quitting = False
 
         self._layout_children()
 
@@ -287,7 +290,22 @@ class GlassWindow(QWidget):
         win_cfg["height"] = geo.height()
         save_config(self.config)
 
+    def request_quit(self):
+        """Gọi từ tray khi người dùng thật sự muốn thoát app (khác với đóng
+        cửa sổ vô tình, ví dụ Alt+F4 — xem closeEvent())."""
+        self._quitting = True
+        self.close()
+
     def closeEvent(self, event):
+        if not self._quitting:
+            # Cửa sổ nổi không có nút đóng thật (frameless, không titlebar).
+            # Nếu sự kiện đóng tới từ nơi khác ngoài tray (vd Alt+F4), chỉ ẩn
+            # cửa sổ đi thay vì huỷ hẳn — tránh rơi vào trạng thái "mồ côi"
+            # (tray vẫn sống nhưng cửa sổ đã bị huỷ, bấm "Hiện cửa sổ" sẽ lỗi).
+            # Muốn thoát hẳn app, dùng menu khay hệ thống > Thoát.
+            event.ignore()
+            self.hide()
+            return
         self.stream_widget.stop()
         self.status_timer.stop()
         self._save_geometry_to_config()

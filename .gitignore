@@ -16,3 +16,8 @@ config/local_config.json
 # IDE
 .vscode/
 .idea/
+
+# Ảnh debug tạm sinh ra trong lúc chẩn đoán stream_widget.py (chứa khung
+# hình thật từ camera — không nên commit vì lý do riêng tư)
+src/debug_frame.png
+src/debug_qimage.png
