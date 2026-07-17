@@ -439,9 +439,10 @@ class GlassWindow(QWidget):
             self.hide()
             return
         if self.recorder.is_recording():
-            # Dừng ghi hình đúng cách trước khi thoát hẳn — nếu không, file
-            # .mp4 đang ghi dở có thể bị hỏng/không đọc được (mux chưa được
-            # đóng gói hoàn chỉnh).
+            # Dừng ghi hình đúng cách trước khi thoát hẳn. File .mkv chống
+            # chịu tốt hơn .mp4 khi bị ngắt đột ngột (xem giải thích trong
+            # recorder.py), nhưng dừng đúng quy trình ở đây vẫn đảm bảo file
+            # được đóng gói (finalize) hoàn chỉnh nhất, không mất giây cuối.
             self.recorder.stop()
         self.stream_widget.stop()
         self.status_timer.stop()

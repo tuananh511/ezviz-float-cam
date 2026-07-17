@@ -1,15 +1,24 @@
 """
 recorder.py — Sprint 5.5: Ghi hình khẩn cấp
 
-Ghi lại luồng RTSP "main" (chất lượng cao) ra file .mp4 cục bộ, HOÀN TOÀN
+Ghi lại luồng RTSP "main" (chất lượng cao) ra file .mkv cục bộ, HOÀN TOÀN
 ĐỘC LẬP với StreamWidget đang hiển thị (cửa sổ chính dùng luồng "sub" nhẹ
 để xem trực tiếp, mượt hơn) — cùng nguyên tắc "1 phiên libVLC riêng" đã dùng
 cho nút "Kiểm tra kết nối" ở Sprint 4 (settings_dialog.py), tránh 2 luồng
 tranh chấp nhau hoặc làm giật hình đang xem khi bấm ghi.
 
-Dùng `sout=#std{access=file,mux=mp4,dst=...}` — đây là REMUX thẳng (không
+Dùng `sout=#std{access=file,mux=mkv,dst=...}` — đây là REMUX thẳng (không
 decode/transcode) nên rất nhẹ CPU, và KHÔNG mở cửa sổ video nào (không cần
 gắn video_set_callbacks hay set_hwnd) vì không có bước hiển thị nào cả.
+
+Lý do chọn MKV thay vì MP4 (quyết định bổ sung sau khi hoàn thành S5.5):
+MP4 ghi bảng chỉ mục file ("moov atom") vào CUỐI file, chỉ được ghi hoàn
+chỉnh khi quá trình dừng diễn ra đúng quy trình (gọi stop()/_cleanup()).
+Nếu app bị crash, mất điện, hoặc bị Task Manager "End task" giữa lúc đang
+ghi — đúng tình huống "sự cố không tắt được" mà tính năng khẩn cấp này cần
+chống chịu — file .mp4 dở dang thường KHÔNG đọc được. MKV (Matroska) không
+có giới hạn này: ghi index dần trong lúc quay, nên file dở dang do ngắt đột
+ngột vẫn phát được (có thể mất vài giây cuối, nhưng không mất trắng cả file).
 """
 
 import datetime
@@ -76,7 +85,7 @@ class EmergencyRecorder(QObject):
         url = build_rtsp_url(main_cfg)
 
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filepath = target_dir / f"emergency_{stamp}.mp4"
+        filepath = target_dir / f"emergency_{stamp}.mkv"
         self._filepath = str(filepath)
 
         vlc_args = ["--no-xlib", "--rtsp-tcp", "--quiet"]
@@ -87,7 +96,7 @@ class EmergencyRecorder(QObject):
         # sout dùng dấu "/" thay vì "\" cho an toàn cú pháp (VLC vẫn hiểu
         # đúng đường dẫn Windows viết theo kiểu "/").
         dst = self._filepath.replace("\\", "/")
-        media.add_option(f":sout=#std{{access=file,mux=mp4,dst={dst}}}")
+        media.add_option(f":sout=#std{{access=file,mux=mkv,dst={dst}}}")
         media.add_option(":sout-keep")
         self.media_player.set_media(media)
         self.media_player.play()
