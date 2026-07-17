@@ -19,6 +19,7 @@ from PySide6.QtCore import Qt, QTimer
 
 from config_loader import build_rtsp_url, save_config
 from settings_dialog import SettingsDialog
+import autostart
 
 
 def _make_icon(color: QColor) -> QIcon:
@@ -107,6 +108,17 @@ class TrayIcon(QSystemTrayIcon):
         if dialog.exec() == QDialog.Accepted:
             new_rtsp = dialog.get_rtsp_config()
             self.window.config["rtsp"] = new_rtsp
+
+            # Sprint 5: áp dụng lựa chọn autostart vào registry thật. Nếu
+            # ghi registry thất bại (hiếm, vd bị chặn quyền), không chặn
+            # việc lưu các cài đặt khác — chỉ lưu lại đúng trạng thái THẬT
+            # đang có trong registry để config.json không "nói dối".
+            autostart_wanted = dialog.is_autostart_checked()
+            applied_ok = autostart.set_autostart(autostart_wanted)
+            self.window.config["autostart"] = (
+                autostart_wanted if applied_ok else autostart.is_autostart_enabled()
+            )
+
             save_config(self.window.config)
             new_url = build_rtsp_url(new_rtsp)
             self.window.apply_new_rtsp(new_url)

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QTimer
 
 from config_loader import build_rtsp_url
+import autostart
 
 _TEST_TIMEOUT_MS = 6000
 _TEST_POLL_MS = 300
@@ -77,6 +78,12 @@ class SettingsDialog(QDialog):
         self.channel_edit = QLineEdit(rtsp_cfg.get("channel", "ch1"))
         self.channel_edit.setPlaceholderText("vd: ch1 (thường không cần đổi)")
 
+        # Sprint 5: đọc trạng thái THẬT từ registry (không đọc từ
+        # config.json) — tránh lệch nếu người dùng tự xoá key bằng tay
+        # (vd qua Task Manager > Startup) ngoài ý muốn của app.
+        self.autostart_check = QCheckBox("Khởi động cùng Windows")
+        self.autostart_check.setChecked(autostart.is_autostart_enabled())
+
         form = QFormLayout()
         form.addRow("Địa chỉ IP camera:", self.ip_edit)
         form.addRow("Port:", self.port_spin)
@@ -85,6 +92,7 @@ class SettingsDialog(QDialog):
         form.addRow("", self.show_pass_check)
         form.addRow("Loại luồng:", self.stream_combo)
         form.addRow("Channel (nâng cao):", self.channel_edit)
+        form.addRow("", self.autostart_check)
 
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
@@ -131,6 +139,11 @@ class SettingsDialog(QDialog):
     def get_rtsp_config(self) -> dict:
         """Gọi sau khi exec() trả về Accepted để lấy config rtsp mới."""
         return self._current_rtsp_dict()
+
+    def is_autostart_checked(self) -> bool:
+        """Gọi sau khi exec() trả về Accepted để biết checkbox 'Khởi động
+        cùng Windows' có đang được tick hay không."""
+        return self.autostart_check.isChecked()
 
     # ---------- kiểm tra kết nối ----------
 
