@@ -2,7 +2,7 @@
 
 Ứng dụng Windows nhỏ gọn, hiển thị camera Ezviz (qua RTSP) dưới dạng cửa sổ nổi ở góc màn hình, luôn hiển thị phía trên các cửa sổ khác.
 
-> ⚠️ **Trạng thái hiện tại: Sprint 3 — Icon khay hệ thống (System tray)**
+> ⚠️ **Trạng thái hiện tại: Sprint 4 — Cài đặt kết nối qua giao diện**
 > Ứng dụng mới chỉ chạy được từ source code Python, **chưa có file `.exe` để tải về dùng ngay**. Bản cài đặt `.exe` sẽ có ở các sprint sau (đóng gói + installer). Người dùng phổ thông vui lòng chờ bản Release chính thức.
 
 ---
@@ -12,7 +12,7 @@
 - [x] Kết nối và hiển thị stream RTSP từ camera Ezviz
 - [x] Giao diện bo góc, hiệu ứng kính mờ (glass), luôn nổi trên cùng, kéo-thả & resize góc
 - [x] Icon khay hệ thống — bật/tắt stream, ẩn/hiện cửa sổ, thoát
-- [ ] Cấu hình kết nối (IP/user/pass) qua giao diện, không cần sửa file
+- [x] Cấu hình kết nối (IP/user/pass) qua giao diện, không cần sửa file
 - [ ] Tuỳ chọn khởi động cùng Windows
 - [ ] File cài đặt `.exe` — không cần cài Python
 - [ ] Gỡ cài đặt chuẩn qua Control Panel / Revo Uninstaller
@@ -39,7 +39,9 @@ pip install -r requirements.txt
 
 ### Cấu hình camera
 
-Chạy thử 1 lần để ứng dụng tự tạo file config tại `%APPDATA%\EzvizFloatCam\config.json`, sau đó mở file đó lên sửa:
+**Cách khuyến nghị — qua giao diện:** chạy app lần đầu (xem mục "Chạy" bên dưới), click phải vào icon khay hệ thống → **Cài đặt...** → nhập IP/port/user/mật khẩu RTSP của camera → bấm **Kiểm tra kết nối** để test thật trước khi lưu → bấm **Lưu**. App sẽ tự kết nối lại ngay với thông tin mới, không cần khởi động lại.
+
+**Cách thủ công (dự phòng):** nếu muốn sửa trực tiếp, chạy thử 1 lần để app tự tạo file config tại `%APPDATA%\EzvizFloatCam\config.json`, rồi mở file đó lên sửa:
 
 ```json
 {
@@ -55,6 +57,8 @@ Chạy thử 1 lần để ứng dụng tự tạo file config tại `%APPDATA%\
 ```
 
 > `stream_type`: dùng `"sub"` cho luồng nhẹ (khuyến nghị cho cửa sổ nhỏ), `"main"` cho luồng nét/nặng hơn.
+
+> ⚠️ Mật khẩu RTSP hiện được lưu dạng plaintext (không mã hoá) trong `config.json` trên máy bạn — file này không commit lên GitHub và chỉ tài khoản Windows của bạn đọc được (`%APPDATA%` theo user), nhưng đây không phải mã hoá thật sự. Nếu cần bảo mật cao hơn, cân nhắc đặt mật khẩu RTSP riêng cho camera (khác mật khẩu chính) trong app Ezviz.
 
 ### Chạy
 
@@ -75,7 +79,7 @@ Cửa sổ hiện ra sẽ ở dạng nổi, không viền, bo góc, luôn nằm 
 - **Click phải vào icon** để mở menu:
   - **Ẩn/Hiện cửa sổ**
   - **Bật/Tắt stream** — dừng stream để tiết kiệm CPU/băng thông mà không cần đóng app.
-  - **Cài đặt...** — sẽ có ở Sprint 4, hiện tạm khoá.
+  - **Cài đặt...** — mở dialog nhập IP/port/user/mật khẩu RTSP, có nút "Kiểm tra kết nối" để test trước khi lưu. Lưu xong app tự kết nối lại ngay.
   - **Thoát** — thoát hẳn ứng dụng (đây là cách duy nhất để thoát app).
 
 > Lưu ý: cửa sổ camera không có nút đóng/titlebar (frameless). Nếu bấm Alt+F4 hoặc lỡ đóng cửa sổ bằng cách khác, app **chỉ ẩn cửa sổ đi** (icon khay vẫn còn) chứ không thoát hẳn — bấm lại vào icon khay hoặc chọn "Hiện cửa sổ" để mở lại.

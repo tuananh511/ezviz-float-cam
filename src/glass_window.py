@@ -290,6 +290,13 @@ class GlassWindow(QWidget):
         win_cfg["height"] = geo.height()
         save_config(self.config)
 
+    def apply_new_rtsp(self, new_url: str):
+        """Gọi từ tray sau khi người dùng lưu cài đặt kết nối mới
+        (SettingsDialog, Sprint 4) — dừng stream cũ, đổi URL, phát lại."""
+        self.stream_widget.stop()
+        self.stream_widget.set_rtsp_url(new_url)
+        QTimer.singleShot(300, self.stream_widget.start)
+
     def request_quit(self):
         """Gọi từ tray khi người dùng thật sự muốn thoát app (khác với đóng
         cửa sổ vô tình, ví dụ Alt+F4 — xem closeEvent())."""

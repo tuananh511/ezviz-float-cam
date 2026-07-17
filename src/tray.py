@@ -1,10 +1,11 @@
 """
-tray.py — Sprint 3: System tray
+tray.py — Sprint 3 + Sprint 4
 
 Icon khay hệ thống + menu chuột phải:
   - Hiện/Ẩn cửa sổ
   - Bật/Tắt stream (play/pause)
-  - Cài đặt... (placeholder, sẽ nối logic thật ở Sprint 4)
+  - Cài đặt... (Sprint 4 — mở SettingsDialog, lưu config + reconnect stream
+    với RTSP URL mới nếu người dùng bấm Lưu)
   - Thoát
 
 Icon được vẽ động bằng QPainter (không cần file ảnh rời phải đóng gói theo
@@ -12,9 +13,12 @@ exe) — 1 vòng tròn glass đơn giản, đổi màu theo trạng thái stream
 đang phát, xám khi dừng).
 """
 
-from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
+from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication, QDialog
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction
 from PySide6.QtCore import Qt, QTimer
+
+from config_loader import build_rtsp_url, save_config
+from settings_dialog import SettingsDialog
 
 
 def _make_icon(color: QColor) -> QIcon:
@@ -57,9 +61,9 @@ class TrayIcon(QSystemTrayIcon):
 
         self.menu.addSeparator()
 
-        # Sprint 4 sẽ mở dialog nhập IP/user/pass thật ở đây — tạm khoá.
-        self.action_settings = QAction("Cài đặt... (sắp có ở Sprint 4)", self.menu)
-        self.action_settings.setEnabled(False)
+        # Sprint 4: mở dialog nhập IP/user/pass thật.
+        self.action_settings = QAction("Cài đặt...", self.menu)
+        self.action_settings.triggered.connect(self._open_settings)
         self.menu.addAction(self.action_settings)
 
         self.menu.addSeparator()
@@ -97,6 +101,16 @@ class TrayIcon(QSystemTrayIcon):
         else:
             self.window.stream_widget.start()
         self._refresh_status()
+
+    def _open_settings(self):
+        dialog = SettingsDialog(self.window.config, parent=self.window)
+        if dialog.exec() == QDialog.Accepted:
+            new_rtsp = dialog.get_rtsp_config()
+            self.window.config["rtsp"] = new_rtsp
+            save_config(self.window.config)
+            new_url = build_rtsp_url(new_rtsp)
+            self.window.apply_new_rtsp(new_url)
+            self._refresh_status()
 
     def _quit(self):
         self._status_timer.stop()

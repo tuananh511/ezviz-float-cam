@@ -100,6 +100,12 @@ class StreamWidget(QFrame):
         self.media_player.set_media(media)
         self.media_player.play()
 
+    def set_rtsp_url(self, new_url: str):
+        """Đổi RTSP URL đang dùng — gọi khi người dùng lưu cài đặt kết nối
+        mới ở SettingsDialog (Sprint 4). Không tự start() lại, để nơi gọi
+        quyết định thời điểm phát (thường sau khi stop() luồng cũ)."""
+        self.rtsp_url = new_url
+
     def stop(self):
         self.media_player.stop()
 
