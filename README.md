@@ -2,8 +2,8 @@
 
 Ứng dụng Windows nhỏ gọn, hiển thị camera Ezviz (qua RTSP) dưới dạng cửa sổ nổi ở góc màn hình, luôn hiển thị phía trên các cửa sổ khác.
 
-> ⚠️ **Trạng thái hiện tại: Sprint 5.6 — Tự kết nối lại & Giới thiệu (About)**
-> Ứng dụng mới chỉ chạy được từ source code Python, **chưa có file `.exe` để tải về dùng ngay**. Bản cài đặt `.exe` sẽ có ở các sprint sau (đóng gói + installer). Người dùng phổ thông vui lòng chờ bản Release chính thức.
+> ⚠️ **Trạng thái hiện tại: Sprint 6 — Build file .exe**
+> Đã có thể tự build file `.exe` từ source (xem mục "Đóng gói thành file .exe" bên dưới). Bản Release chính thức có sẵn `.exe` để tải về (không cần tự build) sẽ có ở sprint sau, sau khi hoàn thiện installer/uninstaller.
 
 ---
 
@@ -18,7 +18,7 @@
 - [x] Ghi hình khẩn cấp — luồng chất lượng cao, lưu file .mkv cục bộ
 - [x] Tự kết nối lại khi mất mạng/camera rớt, hiện màn hình "Mất tín hiệu" thay vì đứng hình đen sì
 - [x] Hộp thoại "Giới thiệu" (About) — icon góc dưới-trái cửa sổ camera
-- [ ] File cài đặt `.exe` — không cần cài Python
+- [x] File cài đặt `.exe` — tự build được từ source, không cần cài Python để CHẠY (vẫn cần VLC)
 - [ ] Gỡ cài đặt chuẩn qua Control Panel / Revo Uninstaller
 
 ---
@@ -110,6 +110,28 @@ Khi RTSP bị rớt (mất mạng, camera tắt, sai cấu hình...), cửa sổ
 ### Giới thiệu (About)
 
 Icon **"i"** nhỏ ở góc dưới-trái cửa sổ camera (cạnh chấm trạng thái phía trên, đối xứng với tay cầm resize ở góc dưới-phải) — bấm vào để xem tên app, số phiên bản, link GitHub và giấy phép mã nguồn mở (MIT).
+
+---
+
+## Đóng gói thành file .exe
+
+Dành cho ai muốn tự build 1 file `.exe` độc lập (không cần Python để CHẠY — vẫn cần cài PyInstaller để BUILD, và máy chạy exe vẫn cần cài VLC media player):
+
+```powershell
+# từ thư mục gốc repo (ngang hàng src\, config\)
+build_exe.bat
+```
+
+Hoặc chạy tay từng bước:
+
+```powershell
+pip install -r requirements-dev.txt
+pyinstaller ezvizfloatcam.spec --noconfirm
+```
+
+File kết quả nằm ở `dist\EzvizFloatCam.exe` — copy sang máy khác (đã cài VLC) chạy thử được ngay, không cần cài Python.
+
+> Build ở chế độ "onefile" (1 file `.exe` duy nhất) nên lần chạy đầu mỗi lần sẽ chậm hơn vài giây (tự giải nén ra thư mục tạm) — bình thường với app chạy nền lâu dài.
 
 ---
 
