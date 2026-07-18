@@ -2,8 +2,8 @@
 
 Ứng dụng Windows nhỏ gọn, hiển thị camera Ezviz (qua RTSP) dưới dạng cửa sổ nổi ở góc màn hình, luôn hiển thị phía trên các cửa sổ khác, giao diện kính mờ bo góc.
 
-> ✅ **Trạng thái hiện tại: Sprint 7 — Installer + Uninstaller (đang chờ đóng gói Release chính thức)**
-> App đã đầy đủ tính năng, đã build được file `.exe` và installer chuẩn Windows. Bản Release đính kèm file cài đặt sẽ sớm có ở trang [Releases](../../releases) — trong lúc chờ, bạn vẫn có thể tự build hoặc chạy từ source theo hướng dẫn bên dưới.
+> ✅ **Trạng thái hiện tại: Hoàn thành đầy đủ (v0.7.0)**
+> App đã đầy đủ tính năng, có file `.exe` cài đặt chuẩn Windows, tải trực tiếp tại [Releases](../../releases).
 
 ---
 
@@ -19,13 +19,13 @@
 - [x] Hộp thoại "Giới thiệu" (About) — icon góc dưới-trái cửa sổ
 - [x] File cài đặt `.exe` — không cần cài Python
 - [x] Installer + Uninstaller chuẩn Windows (Inno Setup) — tương thích Control Panel / Revo Uninstaller
-- [ ] GitHub Release chính thức kèm file cài đặt (đang hoàn tất)
+- [x] GitHub Release chính thức kèm file cài đặt
 
 ---
 
 ## Dành cho người dùng phổ thông (khuyến nghị)
 
-Vào trang [Releases](../../releases), tải file `EzvizFloatCam-Setup-x.x.x.exe` mới nhất, chạy và làm theo hướng dẫn cài đặt. Không cần cài Python.
+Vào trang [Releases](../../releases/tag/v0.7.0), tải file `EzvizFloatCam-Setup-0.7.0.exe`, chạy và làm theo hướng dẫn cài đặt. Không cần cài Python.
 
 **Yêu cầu duy nhất:** máy cần có sẵn [VLC media player](https://www.videolan.org/vlc/) (bản desktop) để có `libvlc.dll` — app dùng chung thư viện giải mã video với VLC, chưa đóng gói kèm theo installer.
 

@@ -52,8 +52,12 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 VersionInfoVersion={#MyAppVersion}
 
 [Languages]
+; Luu y: Inno Setup KHONG di kem san file Vietnamese.isl (phai tai rieng
+; tu ban dich cong dong, khong chinh thuc trong bo cai) - dung tam tieng
+; Anh cho cac nut co san cua Inno (Next/Back/Install...). Toan bo mo ta
+; rieng cua app (checkbox, thong bao xoa config...) van la tieng Viet
+; vi do la text tu viet trong file .iss nay, khong phu thuoc .isl.
 Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "vietnamese"; MessagesFile: "compiler:Languages\Vietnamese.isl"
 
 [Tasks]
 ; Checkbox tuy chon "Khoi dong cung Windows" trong man hinh cai dat.
@@ -116,7 +120,6 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   AppDataConfig: String;
-  ResponseCode: Integer;
 begin
   if CurUninstallStep = usPostUninstall then
   begin
