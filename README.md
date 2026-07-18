@@ -2,7 +2,7 @@
 
 Ứng dụng Windows nhỏ gọn, hiển thị camera Ezviz (qua RTSP) dưới dạng cửa sổ nổi ở góc màn hình, luôn hiển thị phía trên các cửa sổ khác.
 
-> ⚠️ **Trạng thái hiện tại: Sprint 5.5 — Mute & Ghi hình khẩn cấp**
+> ⚠️ **Trạng thái hiện tại: Sprint 5.6 — Tự kết nối lại & Giới thiệu (About)**
 > Ứng dụng mới chỉ chạy được từ source code Python, **chưa có file `.exe` để tải về dùng ngay**. Bản cài đặt `.exe` sẽ có ở các sprint sau (đóng gói + installer). Người dùng phổ thông vui lòng chờ bản Release chính thức.
 
 ---
@@ -15,7 +15,9 @@
 - [x] Cấu hình kết nối (IP/user/pass) qua giao diện, không cần sửa file
 - [x] Tuỳ chọn khởi động cùng Windows
 - [x] Bật/tắt tiếng (mute) — icon trên cửa sổ nổi
-- [x] Ghi hình khẩn cấp — luồng chất lượng cao, lưu file .mp4 cục bộ
+- [x] Ghi hình khẩn cấp — luồng chất lượng cao, lưu file .mkv cục bộ
+- [x] Tự kết nối lại khi mất mạng/camera rớt, hiện màn hình "Mất tín hiệu" thay vì đứng hình đen sì
+- [x] Hộp thoại "Giới thiệu" (About) — icon góc dưới-trái cửa sổ camera
 - [ ] File cài đặt `.exe` — không cần cài Python
 - [ ] Gỡ cài đặt chuẩn qua Control Panel / Revo Uninstaller
 
@@ -91,11 +93,23 @@ Cửa sổ hiện ra sẽ ở dạng nổi, không viền, bo góc, luôn nằm 
 Góc trên-phải cửa sổ camera có 2 icon nhỏ:
 
 - **Icon loa** (bên phải) — bật/tắt tiếng. Trạng thái được lưu lại, lần mở app sau vẫn giữ nguyên.
-- **Icon chấm tròn** (bên trái, cạnh icon loa) — bấm để bắt đầu **ghi hình khẩn cấp**: app mở 1 kết nối RTSP RIÊNG tới **luồng chất lượng cao (main)** của camera (khác với luồng nhẹ đang xem trực tiếp) và ghi thẳng ra file `.mp4` cục bộ, kèm chữ `REC mm:ss` hiện bên cạnh trong lúc đang ghi. Bấm lại icon để dừng và lưu file.
+- **Icon chấm tròn** (bên trái, cạnh icon loa) — bấm để bắt đầu **ghi hình khẩn cấp**: app mở 1 kết nối RTSP RIÊNG tới **luồng chất lượng cao (main)** của camera (khác với luồng nhẹ đang xem trực tiếp) và ghi thẳng ra file `.mkv` cục bộ, kèm chữ `REC mm:ss` hiện bên cạnh trong lúc đang ghi. Bấm lại icon để dừng và lưu file.
   - Video được lưu vào thư mục cấu hình ở **Cài đặt... → Thư mục lưu ghi hình khẩn cấp** (nút "Duyệt..." để tự chọn nơi lưu, hoặc "Dùng thư mục gợi ý" để dùng `%USERPROFILE%\Videos\EzvizFloatCam`). Nếu chưa từng cấu hình, app tự dùng thư mục gợi ý này khi bấm ghi lần đầu.
-  - Tên file dạng `emergency_YYYYMMDD_HHMMSS.mp4`.
+  - Tên file dạng `emergency_YYYYMMDD_HHMMSS.mkv`. Dùng MKV thay vì MP4 vì MKV vẫn phát được ngay cả khi bị ngắt đột ngột (app crash, mất điện...) — xem chi tiết lý do trong `PROJECT_MEMORY.md`.
   - Ghi hình dùng cơ chế remux trực tiếp (không giải mã lại), nên rất nhẹ CPU và không ảnh hưởng tới luồng đang xem trong cửa sổ chính.
   - Nếu mất kết nối tới luồng main giữa chừng (vd sai cấu hình, mất mạng), app sẽ báo lỗi bằng hộp thoại và dừng ghi — file đã ghi tới thời điểm đó vẫn được giữ lại.
+
+### Tự kết nối lại & màn hình "Mất tín hiệu"
+
+Khi RTSP bị rớt (mất mạng, camera tắt, sai cấu hình...), cửa sổ camera sẽ:
+
+1. Tự thử kết nối lại tối đa 5 lần, thời gian chờ giữa các lần tăng dần (1.5s → 3s → 5s → 8s → 12s). Trong lúc này, màn hình hiện nhiễu kiểu TV cũ kèm chữ **"ĐANG KẾT NỐI LẠI"** và số lần đã thử — không còn đứng hình đen sì như trước.
+2. Nếu vẫn thất bại sau 5 lần, chuyển sang màn hình **"MẤT TÍN HIỆU"** và tiếp tục tự thử lại mỗi 15 giây (không giới hạn số lần) — tự khôi phục ngay khi camera/mạng có lại, không cần mở lại app.
+3. Chấm trạng thái ở góc trên-trái cửa sổ đổi màu theo 3 trạng thái: xanh lá (đang xem bình thường), vàng cam (đang kết nối/kết nối lại), đỏ (mất tín hiệu hoặc đã dừng stream).
+
+### Giới thiệu (About)
+
+Icon **"i"** nhỏ ở góc dưới-trái cửa sổ camera (cạnh chấm trạng thái phía trên, đối xứng với tay cầm resize ở góc dưới-phải) — bấm vào để xem tên app, số phiên bản, link GitHub và giấy phép mã nguồn mở (MIT).
 
 ---
 
