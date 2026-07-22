@@ -1,48 +1,58 @@
 # EzvizFloatCam
 
-Ứng dụng Windows nhỏ gọn, hiển thị camera Ezviz (qua RTSP) dưới dạng cửa sổ nổi ở góc màn hình, luôn hiển thị phía trên các cửa sổ khác, giao diện kính mờ bo góc.
+> A lightweight Windows app that shows your Ezviz camera (via RTSP) in a floating, always-on-top, rounded glass-style window.
 
-> ✅ **Trạng thái hiện tại: Hoàn thành đầy đủ (v0.7.0)**
-> App đã đầy đủ tính năng, có file `.exe` cài đặt chuẩn Windows, tải trực tiếp tại [Releases](../../releases).
+<p align="center">
+<img src="assets/demo.gif">
+</p>
 
----
+<p align="center">
+<img src="https://img.shields.io/github/v/release/tuananh511/ezviz-float-cam" alt="Release">
+<img src="https://img.shields.io/github/license/tuananh511/ezviz-float-cam" alt="License">
+<img src="https://img.shields.io/github/actions/workflow/status/tuananh511/ezviz-float-cam/build.yml" alt="Build">
+</p>
 
-## Tính năng
-
-- [x] Kết nối và hiển thị stream RTSP từ camera Ezviz
-- [x] Giao diện bo góc, hiệu ứng kính mờ (glass), luôn nổi trên cùng, kéo-thả & resize góc
-- [x] Icon khay hệ thống — bật/tắt stream, ẩn/hiện cửa sổ, thoát
-- [x] Cấu hình kết nối (IP/user/pass) qua giao diện, không cần sửa file
-- [x] Khởi động cùng Windows (tuỳ chọn, bật/tắt trong Cài đặt hoặc lúc cài installer)
-- [x] Mute & Ghi hình khẩn cấp — icon riêng trên cửa sổ nổi
-- [x] Tự động kết nối lại khi mất tín hiệu — hiện hình nhiễu "MẤT TÍN HIỆU" thay vì màn đen, tự khôi phục khi có mạng lại
-- [x] Hộp thoại "Giới thiệu" (About) — icon góc dưới-trái cửa sổ
-- [x] File cài đặt `.exe` — không cần cài Python
-- [x] Installer + Uninstaller chuẩn Windows (Inno Setup) — tương thích Control Panel / Revo Uninstaller
-- [x] GitHub Release chính thức kèm file cài đặt
+> ✅ **Current status: Feature-complete (v0.7.0)** — a ready-to-run Windows `.exe` installer is available on the [Releases](../../releases) page.
 
 ---
 
-## Dành cho người dùng phổ thông (khuyến nghị)
+## Overview
 
-Vào trang [Releases](../../releases/tag/v0.7.0), tải file `EzvizFloatCam-Setup-0.7.0.exe`, chạy và làm theo hướng dẫn cài đặt. Không cần cài Python.
+EzvizFloatCam connects to an Ezviz camera's RTSP stream and displays it in a small, frameless, rounded floating window that stays on top of other windows — similar to a picture-in-picture overlay. It lives in the system tray, reconnects automatically if the signal drops, and can be configured entirely through its settings UI, with no manual file editing required.
 
-**Yêu cầu duy nhất:** máy cần có sẵn [VLC media player](https://www.videolan.org/vlc/) (bản desktop) để có `libvlc.dll` — app dùng chung thư viện giải mã video với VLC, chưa đóng gói kèm theo installer.
+## Features
 
-Sau khi cài xong, gỡ cài đặt như phần mềm bình thường qua **Control Panel → Apps & Features** hoặc qua Revo Uninstaller.
+- Connects to and displays an Ezviz camera's RTSP stream
+- Rounded, frosted-glass (blur) window; always-on-top; drag to move, drag the corner to resize
+- System tray icon — toggle the stream, show/hide the window, quit
+- Connection settings (IP/user/password) configurable from the UI, no file editing needed
+- Optional launch on Windows startup (toggle in Settings or during install)
+- Mute and emergency-recording icons on the floating window
+- Automatic reconnect on signal loss — shows a "NO SIGNAL" static screen instead of a black screen, and recovers automatically once the connection returns
+- "About" dialog (bottom-left icon on the window)
+- Standalone `.exe` installer — no Python required
+- Standard Windows installer/uninstaller (Inno Setup) — compatible with Control Panel / Revo Uninstaller
+- Official GitHub Release with installer attached
 
----
+## Installation
 
-## Dành cho người muốn chạy/build từ source code
+### For most users (recommended)
 
-### Yêu cầu
+Go to the [Releases](../../releases/tag/v0.7.0) page, download `EzvizFloatCam-Setup-0.7.0.exe`, run it, and follow the install prompts. No Python required.
 
+**Only requirement:** [VLC media player](https://www.videolan.org/vlc/) (desktop edition) must already be installed, since the app relies on VLC's `libvlc.dll` for video decoding — it is not bundled with the installer.
+
+To uninstall, use **Control Panel → Apps & Features** or Revo Uninstaller, just like any other Windows application.
+
+### For running/building from source
+
+**Requirements:**
 - Windows 10/11
 - [Python 3.10+](https://www.python.org/downloads/)
-- [VLC media player](https://www.videolan.org/vlc/) (bản desktop, cần cài để có `libvlc.dll`)
-- Camera Ezviz đã bật RTSP (trong app Ezviz: **Cài đặt thiết bị → Tính năng nâng cao → Địa chỉ Platform/RTSP**, bật RTSP và đặt mật khẩu riêng cho RTSP)
+- [VLC media player](https://www.videolan.org/vlc/) (desktop edition, needed for `libvlc.dll`)
+- An Ezviz camera with RTSP enabled (in the Ezviz app: **Device Settings → Advanced Features → Platform/RTSP Address**, enable RTSP and set a dedicated RTSP password)
 
-### Cài đặt
+**Setup:**
 
 ```
 git clone https://github.com/tuananh511/ezviz-float-cam.git
@@ -52,11 +62,30 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Cấu hình camera
+**Building the `.exe`:**
 
-**Cách khuyến nghị — qua giao diện:** chạy app lần đầu (xem mục "Chạy" bên dưới), click phải vào icon khay hệ thống → **Cài đặt...** → nhập IP/port/user/mật khẩu RTSP của camera → bấm **Kiểm tra kết nối** để test thật trước khi lưu → bấm **Lưu**. App sẽ tự kết nối lại ngay với thông tin mới, không cần khởi động lại.
+```
+build_exe.bat
+```
+(or `pyinstaller ezvizfloatcam.spec --noconfirm` if PyInstaller is already installed). The output binary is at `dist\EzvizFloatCam.exe` — it runs standalone without Python, but VLC must still be installed.
 
-**Cách thủ công (dự phòng):** nếu muốn sửa trực tiếp, chạy thử 1 lần để app tự tạo file config tại `%APPDATA%\EzvizFloatCam\config.json`, rồi mở file đó lên sửa:
+**Building the installer (Inno Setup):**
+
+Requires [Inno Setup 6](https://jrsoftware.org/isinfo.php). Once `dist\EzvizFloatCam.exe` exists:
+
+```
+ISCC.exe installer\setup.iss
+```
+
+The installer is generated at `dist_installer\EzvizFloatCam-Setup-x.x.x.exe`. It registers the app in Apps & Features, optionally creates a desktop icon/startup entry during install, and can be uninstalled via Control Panel or Revo Uninstaller.
+
+## Usage
+
+### Camera configuration
+
+**Recommended — via the UI:** run the app once (see below), right-click the tray icon → **Settings...** → enter the camera's RTSP IP/port/username/password → click **Test Connection** to verify before saving → click **Save**. The app reconnects immediately with the new settings, no restart needed.
+
+**Manual (fallback):** run the app once to let it create a config file at `%APPDATA%\EzvizFloatCam\config.json`, then edit it directly:
 
 ```json
 {
@@ -64,70 +93,51 @@ pip install -r requirements.txt
     "ip": "192.168.1.100",
     "port": 554,
     "username": "admin",
-    "password": "mat-khau-rtsp-cua-ban",
+    "password": "your-rtsp-password",
     "stream_type": "sub",
     "channel": "ch1"
   }
 }
 ```
-> `stream_type`: dùng `"sub"` cho luồng nhẹ (khuyến nghị cho cửa sổ nhỏ), `"main"` cho luồng nét/nặng hơn.
-> ⚠️ Mật khẩu RTSP hiện được lưu dạng plaintext (không mã hoá) trong `config.json` trên máy bạn — file này không commit lên GitHub và chỉ tài khoản Windows của bạn đọc được (`%APPDATA%` theo user), nhưng đây không phải mã hoá thật sự. Nếu cần bảo mật cao hơn, cân nhắc đặt mật khẩu RTSP riêng cho camera (khác mật khẩu chính) trong app Ezviz.
+> `stream_type`: use `"sub"` for the lightweight stream (recommended for a small window), `"main"` for the higher-quality/heavier stream.
+> ⚠️ The RTSP password is currently stored in plaintext (unencrypted) in `config.json` on your machine. This file is not committed to GitHub and is only readable by your own Windows user account (`%APPDATA%` is per-user), but this is not real encryption. For stronger security, consider setting a dedicated RTSP password on the camera (different from the main account password) via the Ezviz app.
 
-### Chạy
+### Running from source
 
 ```
 cd src
 python main.py
 ```
 
-Cửa sổ hiện ra sẽ ở dạng nổi, không viền, bo góc, luôn nằm trên cùng — kéo-thả bất kỳ đâu trên cửa sổ (kể cả trên video) để di chuyển, kéo ở góc dưới-phải để đổi kích thước. Vị trí và kích thước sẽ tự lưu lại cho lần mở sau.
+The window opens as a floating, frameless, rounded, always-on-top overlay — drag anywhere on the window (including over the video) to move it, drag the bottom-right corner to resize. Position and size are remembered for next time.
 
-> Hiệu ứng "kính mờ" (blur nội dung phía sau cửa sổ) chỉ hoạt động thật trên Windows 10/11. Nếu chạy thử trên hệ điều hành khác, ứng dụng sẽ tự chuyển sang nền bán trong suốt thường (không có blur).
+> The frosted-glass blur effect only works on Windows 10/11. On other operating systems the app falls back to a plain semi-transparent background without blur.
 
-### Icon khay hệ thống
+### System tray icon
 
-Ứng dụng chạy nền qua 1 icon ở khay hệ thống (system tray, góc dưới-phải màn hình cạnh đồng hồ):
+The app runs in the background via a system tray icon (bottom-right of the screen, next to the clock):
 
-- **Click trái / double-click vào icon**: ẩn/hiện cửa sổ camera.
-- **Click phải vào icon** để mở menu:
-  * **Ẩn/Hiện cửa sổ**
-  * **Bật/Tắt stream** — dừng stream để tiết kiệm CPU/băng thông mà không cần đóng app.
-  * **Cài đặt...** — mở dialog nhập IP/port/user/mật khẩu RTSP, khởi động cùng Windows, có nút "Kiểm tra kết nối" để test trước khi lưu.
-  * **Thoát** — thoát hẳn ứng dụng (đây là cách duy nhất để thoát app).
+- **Left-click / double-click the icon**: show/hide the camera window.
+- **Right-click the icon** to open the menu:
+  * **Show/Hide window**
+  * **Start/Stop stream** — stop the stream to save CPU/bandwidth without closing the app.
+  * **Settings...** — opens the dialog to enter RTSP IP/port/user/password, toggle launch on Windows startup, and test the connection before saving.
+  * **Quit** — closes the app entirely (this is the only way to fully exit).
 
-> Lưu ý: cửa sổ camera không có nút đóng/titlebar (frameless). Nếu bấm Alt+F4 hoặc lỡ đóng cửa sổ bằng cách khác, app **chỉ ẩn cửa sổ đi** (icon khay vẫn còn) chứ không thoát hẳn — bấm lại vào icon khay hoặc chọn "Hiện cửa sổ" để mở lại.
+> Note: the camera window has no close button/titlebar (frameless). Pressing Alt+F4 or otherwise closing the window only **hides** it (the tray icon remains) — it does not quit the app. Click the tray icon again or choose "Show window" to bring it back.
 
-### Icon trên cửa sổ nổi
+### Icons on the floating window
 
-- **Góc trên-trái:** chấm trạng thái kết nối — xanh lá (đang xem), vàng cam (đang kết nối lại), đỏ (mất tín hiệu/đã dừng).
-- **Góc trên-phải:** icon mute / ghi hình khẩn cấp.
-- **Góc dưới-trái:** icon "i" — mở hộp thoại Giới thiệu (phiên bản, link GitHub, giấy phép MIT).
-- **Góc dưới-phải:** tay cầm kéo để resize cửa sổ.
+- **Top-left:** connection status dot — green (streaming), amber (reconnecting), red (no signal/stopped).
+- **Top-right:** mute / emergency-recording icon.
+- **Bottom-left:** "i" icon — opens the About dialog (version, GitHub link, MIT license).
+- **Bottom-right:** resize handle.
 
-Khi mất kết nối camera, cửa sổ tự chuyển sang hiển thị hình nhiễu kèm chữ "ĐANG KẾT NỐI LẠI" / "MẤT TÍN HIỆU" thay vì màn đen, và tự khôi phục khi có tín hiệu trở lại — không cần mở lại app.
+When the camera connection is lost, the window switches to a static-noise display with "RECONNECTING" / "NO SIGNAL" text instead of a black screen, and recovers automatically once the signal returns — no need to restart the app.
 
-### Đóng gói thành file `.exe`
+## Roadmap
 
-```
-build_exe.bat
-```
-(hoặc `pyinstaller ezvizfloatcam.spec --noconfirm` nếu đã tự cài PyInstaller). File exe xuất ra tại `dist\EzvizFloatCam.exe` — chạy độc lập, không cần Python trên máy, nhưng vẫn cần cài sẵn VLC.
-
-### Đóng gói thành installer (Inno Setup)
-
-Yêu cầu [Inno Setup 6](https://jrsoftware.org/isinfo.php). Sau khi có `dist\EzvizFloatCam.exe`:
-
-```
-ISCC.exe installer\setup.iss
-```
-
-File cài đặt xuất ra tại `dist_installer\EzvizFloatCam-Setup-x.x.x.exe`. Đây là bản Windows installer chuẩn: đăng ký vào Apps & Features, hỗ trợ tuỳ chọn tạo icon Desktop/khởi động cùng Windows lúc cài, và gỡ được qua Control Panel hoặc Revo Uninstaller.
-
----
-
-## Đóng góp / Báo lỗi
-
-Đây là dự án cá nhân đang phát triển dần. Nếu gặp lỗi khi chạy thử, vui lòng tạo [Issue](../../issues) kèm mô tả lỗi và log console.
+- [ ] Contributions and bug reports welcome — this is an ongoing personal project. Please open an [Issue](../../issues) with a description and console log if you run into problems.
 
 ## License
 
