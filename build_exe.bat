@@ -18,6 +18,11 @@ if errorlevel 1 (
 
 echo.
 echo [2/2] Dang build EzvizFloatCam.exe (che do onefile)...
+REM LUU Y (vu icon): file ezvizfloatcam.spec khong nam trong repo (bi
+REM .gitignore loai vi *.spec la file build sinh/tuy may). Neu spec cua
+REM ban chua tro toi icon rieng, mo ezvizfloatcam.spec, tim doi tuong EXE(...)
+REM va them tham so:  icon='assets\app_icon.ico'
+REM (file .ico da co san trong assets\ tu Sprint 8 - vu icon)
 pyinstaller ezvizfloatcam.spec --noconfirm
 
 if errorlevel 1 (

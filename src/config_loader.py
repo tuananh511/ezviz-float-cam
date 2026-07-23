@@ -32,6 +32,17 @@ def get_default_config_path() -> Path:
     return base_path / "config" / "default_config.json"
 
 
+def get_app_icon_path() -> Path:
+    """Đường dẫn tới assets/app_icon.ico đi kèm source/exe (Sprint 8 - vụ
+    icon). Dùng chung logic base_path với get_default_config_path() ở trên,
+    vì PyInstaller onefile giải nén cả hai vào cùng thư mục tạm _MEIPASS."""
+    if getattr(sys, "frozen", False):
+        base_path = Path(sys._MEIPASS)
+    else:
+        base_path = Path(__file__).resolve().parent.parent
+    return base_path / "assets" / "app_icon.ico"
+
+
 def load_config() -> dict:
     config_dir = get_config_dir()
     config_path = config_dir / "config.json"

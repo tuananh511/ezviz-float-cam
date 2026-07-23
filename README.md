@@ -96,7 +96,7 @@ Toàn bộ roadmap ban đầu đã hoàn thành trong bản phát hành `v0.7.0`
 
 - [ ] Tự động cài kèm VLC redistributable trong installer
 - [ ] Resize từ cả 4 góc/4 cạnh thay vì chỉ góc dưới-phải
-- [ ] Icon `.ico` riêng cho app thay vì icon mặc định Windows
+- [x] Icon `.ico` riêng cho app thay vì icon mặc định Windows (`assets/app_icon.ico`, Sprint 8)
 - [ ] Mã hoá mật khẩu RTSP trong `config.json` (hiện lưu plaintext)
 
 ## License

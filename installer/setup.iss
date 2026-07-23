@@ -45,8 +45,11 @@ OutputBaseFilename=EzvizFloatCam-Setup-{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-; Icon rieng cho installer - dung icon mac dinh Inno neu chua co .ico rieng
-; (khop ghi chu S6: app chua co file .ico rieng)
+; Icon rieng cho app (Sprint 8 - vu icon): dung lam icon installer/wizard
+; va icon hien trong Add/Remove Programs. UninstallDisplayIcon van tro
+; ve chinh file .exe - vi exe da duoc build kem icon nay (xem build_exe.bat),
+; nen Windows se tu lay icon dung tu file .exe do, khong can trich rieng.
+SetupIconFile={#RepoRoot}\assets\app_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 ; Cho phep Revo Uninstaller / Control Panel doc dung dung luong da cai
 VersionInfoVersion={#MyAppVersion}

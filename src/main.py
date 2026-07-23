@@ -8,9 +8,10 @@ thống (TrayIcon) để hiện/ẩn, bật/tắt stream, thoát app.
 import sys
 import re
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+from PySide6.QtGui import QIcon
 from PySide6.QtCore import QTimer
 
-from config_loader import load_config, build_rtsp_url
+from config_loader import load_config, build_rtsp_url, get_app_icon_path
 from glass_window import GlassWindow
 from tray import TrayIcon
 
@@ -27,6 +28,16 @@ def main():
     # sổ chính bị ẩn/đóng (vd Alt+F4) — nếu không, tray sẽ chết theo, mất hết
     # tác dụng của việc có system tray.
     app.setQuitOnLastWindowClosed(False)
+
+    # Icon riêng cho app (Sprint 8 - vụ icon): set ở cấp QApplication để cả
+    # taskbar/Alt-Tab lẫn icon mặc định của tray đều dùng đúng icon này, thay
+    # vì icon Python/Qt mặc định — độc lập với icon đã nhúng vào .exe lúc
+    # build (PyInstaller --icon), nên vẫn đúng khi chạy trực tiếp từ source.
+    icon_path = get_app_icon_path()
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
+    else:
+        print(f"[WARN] Không tìm thấy app icon tại {icon_path} — dùng icon mặc định.")
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         print("[WARN] Hệ thống không có khay hệ thống (system tray) — icon khay sẽ không hiện.")
