@@ -2,3 +2,7 @@
 # muốn chạy từ source code KHÔNG cần cài các gói này, chỉ cần requirements.txt
 -r requirements.txt
 pyinstaller>=6.0.0
+
+# Chỉ cần để chạy test suite (tests/) — không cần VLC/RTSP thật, xem
+# tests/conftest.py (vlc được fake hoàn toàn).
+pytest>=7.0.0
