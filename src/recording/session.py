@@ -180,6 +180,23 @@ class RecordingSession:
             raise ValueError("total_bytes must be non-negative")
         self.total_bytes = value
 
+    def recalculate_total_bytes(self) -> int:
+        """Task 4: recompute total_bytes as the sum of size_bytes across
+        only the COMPLETED segments in `segments`. A segment that has not
+        been marked completed yet is still being written — its current
+        size_bytes (0, per the RecordingSegment default) is not final and
+        must not be counted, or total_bytes would understate/misstate the
+        session's real size while a segment is mid-write.
+
+        This does not run automatically on add_segment()/mark_completed()
+        (this model has no callbacks) — callers (the future recorder
+        integration) call this after finalizing a segment. Returns the
+        recomputed total_bytes for convenience.
+        """
+        total = sum(segment.size_bytes for segment in self.segments if segment.completed)
+        self.set_total_bytes(total)
+        return self.total_bytes
+
     def is_active(self) -> bool:
         """True while the session has not reached STOPPED/FAILED/DISK_FULL
         (RECOVERABLE is a resolved-but-not-active terminal-ish state too)."""
