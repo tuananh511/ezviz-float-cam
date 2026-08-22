@@ -121,3 +121,40 @@ def wired_vlc(fake_vlc):
         media = media_mock
 
     return Wired
+
+
+@pytest.fixture
+def segment_vlc(fake_vlc):
+    """Like `wired_vlc`, but for Task 3 (segmented recording): configures
+    fake_vlc.Instance to return a BRAND NEW instance/media_player/media
+    mock graph on EVERY call, instead of one fixed graph reused for the
+    whole test. This mirrors the real EmergencyRecorder, which creates a
+    dedicated VLC instance/media_player for each segment.
+
+    Returns a list; `segment_vlc[i]` is the i-th created graph (0-indexed,
+    in call order), each with `.instance`, `.media_player`, `.media`
+    attributes — so tests can assert things like "segment 0's player was
+    stopped/released before segment 1's instance was created".
+    """
+    created = []
+
+    def _make_instance(*args, **kwargs):
+        index = len(created)
+        instance_mock = MagicMock(name=f"vlc_instance_{index}")
+        media_player_mock = MagicMock(name=f"media_player_{index}")
+        media_mock = MagicMock(name=f"media_{index}")
+
+        instance_mock.media_player_new.return_value = media_player_mock
+        instance_mock.media_new.return_value = media_mock
+        media_player_mock.get_state.return_value = fake_vlc.State.Playing
+
+        class _SegmentGraph:
+            instance = instance_mock
+            media_player = media_player_mock
+            media = media_mock
+
+        created.append(_SegmentGraph)
+        return instance_mock
+
+    fake_vlc.Instance.side_effect = _make_instance
+    return created
