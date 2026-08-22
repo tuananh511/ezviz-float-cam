@@ -12,8 +12,19 @@ deciding whether it's safe to start a new RecordingSegment. It performs
 filesystem stat() calls (shutil.disk_usage), unlike session.py, but is
 still standard-library only: no PySide6, no VLC, no deletion of any
 recording/session data.
+
+Task 6 adds metadata.py (RecordingMetadataStore) — save()/load()
+persistence of a RecordingSession to a `session.json` file inside a
+session directory, using atomic replacement (temp file + os.replace())
+and strict validation on load. Still standard-library only: no
+PySide6, no VLC. Not yet wired into EmergencyRecorder.
 """
 
+from .metadata import (
+    MetadataError,
+    RecordingMetadataStore,
+    SESSION_METADATA_FILENAME,
+)
 from .session import (
     InvalidTransitionError,
     RecordingSegment,
@@ -40,4 +51,7 @@ __all__ = [
     "StorageCheckResult",
     "StorageDecision",
     "StoragePolicy",
+    "MetadataError",
+    "RecordingMetadataStore",
+    "SESSION_METADATA_FILENAME",
 ]
