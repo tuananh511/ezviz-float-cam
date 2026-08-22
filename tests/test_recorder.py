@@ -16,14 +16,16 @@ in conftest.py.
 """
 
 import re
+import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from recorder import SEGMENT_DURATION_S, EmergencyRecorder
-from recording import RecordingStatus
+from recording import DEFAULT_LOW_FREE_BYTES, DEFAULT_MIN_FREE_BYTES, RecordingStatus
 
 
 RTSP_CFG = {
@@ -179,6 +181,10 @@ def test_start_vlc_instance_creation_failure_propagates_uncaught(tmp_path, fake_
     assert rec.instance is None
     assert rec.media_player is None
     assert errors == []
+    # Task 5 regression guard: the failure happens before _start_segment()
+    # succeeds, so the session must still be STARTING — never incorrectly
+    # advanced to RECORDING.
+    assert rec._session.status == RecordingStatus.STARTING
 
 
 # ---------------------------------------------------------------------
@@ -691,6 +697,8 @@ def test_start_segment_cleans_up_local_resources_on_setup_failure(tmp_path, fake
     assert rec.instance is None
     assert rec.media_player is None
     assert rec.is_recording() is False
+    # Task 5 regression guard: session must remain STARTING, not RECORDING.
+    assert rec._session.status == RecordingStatus.STARTING
 
 
 def test_start_segment_cleans_up_instance_when_media_player_new_fails(
@@ -710,3 +718,194 @@ def test_start_segment_cleans_up_instance_when_media_player_new_fails(
     assert rec.instance is None
     assert rec.media_player is None
     assert rec.is_recording() is False
+    # Task 5 regression guard: session must remain STARTING, not RECORDING.
+    assert rec._session.status == RecordingStatus.STARTING
+
+
+# ---------------------------------------------------------------------
+# 14. Task 5 — StoragePolicy integration
+#
+# StoragePolicy.check() calls shutil.disk_usage() on the real filesystem
+# under tmp_path (no fake/mock StoragePolicy is substituted — this is a
+# real, unmocked StoragePolicy exercising the real recorder integration).
+# shutil.disk_usage() itself is monkeypatched per-test to force a
+# specific decision (ALLOW / ALLOW_LOW_SPACE / DISK_FULL / CHECK_FAILED)
+# deterministically, the same technique tests/test_storage_policy.py
+# uses, instead of depending on how much free space the machine running
+# the suite actually has.
+# ---------------------------------------------------------------------
+
+
+def _fake_disk_usage(total: int, used: int, free: int):
+    def _inner(path):
+        return SimpleNamespace(total=total, used=used, free=free)
+
+    return _inner
+
+
+def _low_space_free_bytes() -> int:
+    """A free-space value strictly between the hard/low thresholds —
+    ALLOW_LOW_SPACE territory."""
+    return (DEFAULT_MIN_FREE_BYTES + DEFAULT_LOW_FREE_BYTES) // 2
+
+
+def test_start_disk_full_creates_no_vlc_and_ends_session_disk_full(
+    tmp_path, fake_vlc, monkeypatch
+):
+    monkeypatch.setattr(
+        shutil, "disk_usage", _fake_disk_usage(total=10_000_000_000, used=9_999_900_000, free=100_000)
+    )
+
+    rec = EmergencyRecorder()
+    errors = []
+    started = []
+    rec.recording_error.connect(errors.append)
+    rec.recording_started.connect(started.append)
+
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    assert rec.is_recording() is False
+    assert rec.instance is None
+    assert rec.media_player is None
+    assert started == []
+    assert len(errors) == 1
+    assert rec._session.status == RecordingStatus.DISK_FULL
+    assert rec._session.segments == []
+    assert not rec._watchdog.isActive()
+    assert not rec._segment_timer.isActive()
+    fake_vlc.Instance.assert_not_called()
+
+
+def test_start_check_failed_creates_no_vlc_and_ends_session_failed(
+    tmp_path, fake_vlc, monkeypatch
+):
+    def _boom(path):
+        raise OSError("disk stat failed (test)")
+
+    monkeypatch.setattr(shutil, "disk_usage", _boom)
+
+    rec = EmergencyRecorder()
+    errors = []
+    started = []
+    rec.recording_error.connect(errors.append)
+    rec.recording_started.connect(started.append)
+
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    assert rec.is_recording() is False
+    assert rec.instance is None
+    assert rec.media_player is None
+    assert started == []
+    assert len(errors) == 1
+    assert rec._session.status == RecordingStatus.FAILED
+    assert rec._session.segments == []
+    assert not rec._watchdog.isActive()
+    assert not rec._segment_timer.isActive()
+    fake_vlc.Instance.assert_not_called()
+
+
+def test_start_allow_low_space_still_creates_first_segment(
+    tmp_path, wired_vlc, monkeypatch
+):
+    monkeypatch.setattr(
+        shutil,
+        "disk_usage",
+        _fake_disk_usage(total=100_000_000_000, used=1, free=_low_space_free_bytes()),
+    )
+
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    assert rec.is_recording() is True
+    assert len(rec._session.segments) == 1
+    assert rec._session.status == RecordingStatus.RECORDING
+
+
+def test_storage_policy_checks_the_session_directory(tmp_path, wired_vlc):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    assert rec._storage_policy is not None
+    assert rec._storage_policy.recording_dir == rec._session_dir
+
+
+def test_rotation_disk_full_ends_session_without_new_vlc_instance(
+    tmp_path, segment_vlc, monkeypatch
+):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    assert len(segment_vlc) == 1
+    first_segment = rec._session.segments[0]
+
+    monkeypatch.setattr(
+        shutil, "disk_usage", _fake_disk_usage(total=10_000_000_000, used=9_999_900_000, free=100_000)
+    )
+
+    errors = []
+    rec.recording_error.connect(errors.append)
+
+    rec._rotate_segment()
+
+    assert rec.is_recording() is False
+    assert rec.instance is None
+    assert rec.media_player is None
+    assert len(errors) == 1
+    assert rec._session.status == RecordingStatus.DISK_FULL
+    # the completed first segment is kept, not deleted, and no second
+    # segment/VLC graph was ever created
+    assert len(rec._session.segments) == 1
+    assert first_segment.completed is True
+    assert len(segment_vlc) == 1
+    assert not rec._watchdog.isActive()
+    assert not rec._segment_timer.isActive()
+
+
+def test_rotation_check_failed_ends_session_failed_without_new_vlc_instance(
+    tmp_path, segment_vlc, monkeypatch
+):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    assert len(segment_vlc) == 1
+    first_segment = rec._session.segments[0]
+
+    def _boom(path):
+        raise OSError("disk stat failed (test)")
+
+    monkeypatch.setattr(shutil, "disk_usage", _boom)
+
+    errors = []
+    rec.recording_error.connect(errors.append)
+
+    rec._rotate_segment()
+
+    assert rec.is_recording() is False
+    assert rec.instance is None
+    assert rec.media_player is None
+    assert len(errors) == 1
+    assert rec._session.status == RecordingStatus.FAILED
+    assert len(rec._session.segments) == 1
+    assert first_segment.completed is True
+    assert len(segment_vlc) == 1
+    assert not rec._watchdog.isActive()
+    assert not rec._segment_timer.isActive()
+
+
+def test_rotation_allow_low_space_starts_next_segment(
+    tmp_path, segment_vlc, monkeypatch
+):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    assert len(segment_vlc) == 1
+
+    monkeypatch.setattr(
+        shutil,
+        "disk_usage",
+        _fake_disk_usage(total=100_000_000_000, used=1, free=_low_space_free_bytes()),
+    )
+
+    rec._rotate_segment()
+
+    assert rec.is_recording() is True
+    assert len(rec._session.segments) == 2
+    assert len(segment_vlc) == 2
+    assert rec._session.status == RecordingStatus.RECORDING

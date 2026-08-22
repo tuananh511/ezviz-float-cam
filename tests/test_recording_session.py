@@ -77,6 +77,7 @@ def test_full_happy_path_transition_sequence():
     "path",
     [
         [RecordingStatus.STARTING, RecordingStatus.FAILED],
+        [RecordingStatus.STARTING, RecordingStatus.DISK_FULL],
         [RecordingStatus.STARTING, RecordingStatus.RECORDING, RecordingStatus.FAILED],
         [
             RecordingStatus.STARTING,
@@ -96,6 +97,20 @@ def test_valid_failure_paths(path):
     for status in path:
         session.transition_to(status)
     assert session.status is path[-1]
+
+
+def test_starting_can_transition_directly_to_disk_full():
+    """Task 5: a storage-policy check made before the first segment is
+    created (session still STARTING) must be able to end the session in
+    DISK_FULL without first passing through RECORDING."""
+    session = RecordingSession()
+    session.transition_to(RecordingStatus.STARTING)
+
+    session.transition_to(RecordingStatus.DISK_FULL, error="no space left")
+
+    assert session.status is RecordingStatus.DISK_FULL
+    assert session.error == "no space left"
+    assert session.ended_at is not None
 
 
 # ---------------------------------------------------------------------

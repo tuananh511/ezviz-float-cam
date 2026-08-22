@@ -45,12 +45,15 @@ class RecordingStatus(Enum):
     RECOVERABLE = "RECOVERABLE"
 
 
-# Only the transitions actually needed today (per Task 2 scope). Anything
-# not listed here is rejected by RecordingSession.transition_to().
+# Only the transitions actually needed today (per Task 2 scope, extended
+# in Task 5 to allow STARTING -> DISK_FULL so a storage-policy check made
+# before the first segment is created can end the session in DISK_FULL
+# without first passing through RECORDING). Anything not listed here is
+# rejected by RecordingSession.transition_to().
 _ALLOWED_TRANSITIONS: dict[RecordingStatus, frozenset[RecordingStatus]] = {
     RecordingStatus.IDLE: frozenset({RecordingStatus.STARTING}),
     RecordingStatus.STARTING: frozenset(
-        {RecordingStatus.RECORDING, RecordingStatus.FAILED}
+        {RecordingStatus.RECORDING, RecordingStatus.FAILED, RecordingStatus.DISK_FULL}
     ),
     RecordingStatus.RECORDING: frozenset(
         {

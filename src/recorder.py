@@ -32,6 +32,40 @@ Nguyên tắc chọn: khi hết thời gian một đoạn, DỪNG HẲN VLC medi
 đoạn đó rồi mới TẠO MỚI một VLC instance/media_player cho đoạn tiếp theo —
 không cố "mutate" một đối tượng vlc.Media đang chạy để đổi file đích giữa
 chừng (vòng đời rõ ràng, dễ kiểm thử/khôi phục hơn là chỉnh sửa in-place).
+
+--- Task 5: tích hợp StoragePolicy (src/recording/storage.py) ---
+
+StoragePolicy được gọi ở CẤP CALLER (start()/_rotate_segment()), KHÔNG
+gọi bên trong _start_segment() — _start_segment() vẫn chỉ biết cách tạo
+một đoạn, không biết/không quan tâm chính sách lưu trữ. Trước khi tạo
+BẤT KỲ đoạn nào (đoạn đầu tiên trong start(), hoặc đoạn kế tiếp trong
+_rotate_segment()), self._enforce_storage_policy_or_abort() kiểm tra
+dung lượng đĩa còn trống:
+
+- ALLOW / ALLOW_LOW_SPACE: cho phép tạo đoạn (ALLOW_LOW_SPACE vẫn tạo
+  đoạn, chỉ là dấu hiệu cảnh báo sớm, không phải một cách xử lý khác).
+- DISK_FULL: KHÔNG tạo VLC instance nào — session chuyển sang
+  RecordingStatus.DISK_FULL, timer liên quan (watchdog/segment_timer)
+  được dừng, recording_error được emit.
+- CHECK_FAILED: cùng cách xử lý như DISK_FULL (không tạo VLC, dừng
+  timer, emit recording_error) nhưng session chuyển sang
+  RecordingStatus.FAILED — không biết chắc còn đủ chỗ hay không thì coi
+  như không an toàn, nhưng đây không phải "hết đĩa" nên dùng trạng thái
+  lỗi chung thay vì DISK_FULL.
+
+QUAN TRỌNG: kiểm tra chính sách lưu trữ cho đoạn ĐẦU TIÊN diễn ra khi
+session vẫn còn ở STARTING — KHÔNG chuyển session sang RECORDING trước
+để "mượn" đường DISK_FULL từ RECORDING. Làm vậy sẽ khiến session bị đánh
+dấu RECORDING sai lệch nếu _start_segment() sau đó thất bại (xem
+test_start_vlc_instance_creation_failure_propagates_uncaught — session
+phải ở lại STARTING khi lỗi này xảy ra, không được "nhảy cóc" qua
+RECORDING). Thay vào đó, recording/session.py (Task 5) được mở rộng
+thêm đúng hai transition còn thiếu: STARTING -> DISK_FULL (mới) và
+STARTING -> FAILED (đã có sẵn từ Task 2) — nhờ vậy session có thể
+chuyển thẳng từ STARTING sang DISK_FULL/FAILED mà không cần đi qua
+RECORDING trước. session.transition_to(RECORDING) chỉ được gọi SAU KHI
+_start_segment() của đoạn đầu tiên đã thành công, giữ đúng ngữ nghĩa
+gốc trước Task 5.
 """
 
 import datetime
@@ -47,6 +81,8 @@ from recording import (
     RecordingSegment,
     RecordingSession,
     RecordingStatus,
+    StorageDecision,
+    StoragePolicy,
 )
 
 _SUBDIR = "EzvizFloatCam"
@@ -85,6 +121,10 @@ class EmergencyRecorder(QObject):
         self._session_dir: Path | None = None
         self._current_segment: RecordingSegment | None = None
         self._rtsp_url: str | None = None
+
+        # Task 5: chính sách kiểm tra dung lượng đĩa cho phiên hiện tại
+        # (tạo mới trong start(), gắn với self._session_dir của phiên đó).
+        self._storage_policy: StoragePolicy | None = None
 
         # theo dõi trạng thái mỗi 500ms để phát hiện lỗi kết nối luồng main
         # (vd sai mật khẩu, camera không hỗ trợ main stream, mất mạng...)
@@ -139,12 +179,22 @@ class EmergencyRecorder(QObject):
         session.transition_to(RecordingStatus.STARTING)
         self._session = session
         self._session_dir = session_dir
+        self._storage_policy = StoragePolicy(session_dir)
+
+        # Task 5: kiểm tra chính sách lưu trữ TRƯỚC khi tạo đoạn đầu
+        # tiên, trong khi session vẫn còn ở STARTING (xem ghi chú Task 5
+        # ở đầu file — session KHÔNG được chuyển sang RECORDING sớm chỉ
+        # để hợp lệ hoá DISK_FULL).
+        if not self._enforce_storage_policy_or_abort():
+            return
 
         # Đoạn đầu tiên: giữ nguyên hành vi trước Task 3 — lỗi ở bước tạo
         # VLC instance KHÔNG được bắt ở đây, sẽ propagate ra ngoài start()
         # (xem test_start_vlc_instance_creation_failure_propagates_uncaught).
         # Việc bắt lỗi có kiểm soát (transition FAILED + recording_error)
         # chỉ áp dụng cho các đoạn xoay vòng tiếp theo, xem _rotate_segment().
+        # Session vẫn ở STARTING cho tới khi bước này thành công — nếu nó
+        # raise, session KHÔNG được đánh dấu RECORDING (xem ghi chú Task 5).
         self._start_segment()
 
         session.transition_to(RecordingStatus.RECORDING)
@@ -271,6 +321,50 @@ class EmergencyRecorder(QObject):
         except InvalidTransitionError:
             pass
 
+    # ------------------------------------------------------------------
+    # Task 5: tích hợp StoragePolicy — gọi ở cấp caller, TRƯỚC khi tạo
+    # bất kỳ đoạn ghi hình mới nào (đoạn đầu tiên trong start(), hoặc
+    # đoạn kế tiếp trong _rotate_segment()).
+    # ------------------------------------------------------------------
+
+    def _enforce_storage_policy_or_abort(self) -> bool:
+        """Kiểm tra self._storage_policy TRƯỚC khi caller được phép gọi
+        _start_segment(). Trả về True nếu được phép tạo đoạn mới
+        (ALLOW/ALLOW_LOW_SPACE) — caller tiếp tục như bình thường.
+
+        Trả về False nếu bị từ chối (DISK_FULL/CHECK_FAILED) — trong
+        trường hợp đó, hàm này đã TỰ xử lý toàn bộ hậu quả (không tạo
+        VLC nào ở đây hay ở caller): dừng watchdog/segment_timer, xoá
+        _start_time, chuyển self._session sang trạng thái kết thúc phù
+        hợp (DISK_FULL hoặc FAILED), và emit recording_error. Caller chỉ
+        cần return ngay khi nhận False — KHÔNG được gọi _start_segment()
+        sau đó."""
+        result = self._storage_policy.check()
+        if result.allows_new_segment():
+            return True
+
+        self._watchdog.stop()
+        self._segment_timer.stop()
+        self._start_time = None
+
+        if result.decision is StorageDecision.DISK_FULL:
+            self._transition_session_safely(
+                RecordingStatus.DISK_FULL, error=result.reason
+            )
+            self.recording_error.emit(
+                "Hết dung lượng đĩa — đã dừng ghi hình khẩn cấp:\n"
+                f"{result.reason}"
+            )
+        else:  # StorageDecision.CHECK_FAILED
+            self._transition_session_safely(
+                RecordingStatus.FAILED, error=result.reason
+            )
+            self.recording_error.emit(
+                "Không kiểm tra được dung lượng đĩa — đã dừng ghi hình "
+                f"khẩn cấp:\n{result.reason}"
+            )
+        return False
+
     def _rotate_segment(self):
         """Gọi khi self._segment_timer hết giờ (hoặc trực tiếp, trong
         test): kết thúc đoạn hiện tại và bắt đầu đoạn kế tiếp, giữ nguyên
@@ -284,6 +378,14 @@ class EmergencyRecorder(QObject):
         # (size_bytes/ended_at chính xác) — xem docstring 2 hàm trên.
         self._release_current_vlc_player()
         self._finalize_active_segment()
+
+        # Task 5: kiểm tra chính sách lưu trữ TRƯỚC khi tạo đoạn kế tiếp.
+        # Nếu bị từ chối, _enforce_storage_policy_or_abort() đã tự dừng
+        # timer + chuyển session sang DISK_FULL/FAILED + emit
+        # recording_error — không tạo VLC nào ở đây, không finalize thêm
+        # lần nữa (đoạn cũ đã finalize ở trên), không xoá segment nào.
+        if not self._enforce_storage_policy_or_abort():
+            return
 
         try:
             self._start_segment()
