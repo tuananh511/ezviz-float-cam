@@ -48,8 +48,12 @@ class RecordingStatus(Enum):
 # Only the transitions actually needed today (per Task 2 scope, extended
 # in Task 5 to allow STARTING -> DISK_FULL so a storage-policy check made
 # before the first segment is created can end the session in DISK_FULL
-# without first passing through RECORDING). Anything not listed here is
-# rejected by RecordingSession.transition_to().
+# without first passing through RECORDING; extended in Task 8 to allow
+# STOPPING -> FAILED so crash/session recovery can reconcile a session
+# that was persisted mid-STOPPING when its process terminated
+# unexpectedly, without inventing an intermediate STOPPED it never
+# actually reached). Anything not listed here is rejected by
+# RecordingSession.transition_to().
 _ALLOWED_TRANSITIONS: dict[RecordingStatus, frozenset[RecordingStatus]] = {
     RecordingStatus.IDLE: frozenset({RecordingStatus.STARTING}),
     RecordingStatus.STARTING: frozenset(
@@ -62,7 +66,9 @@ _ALLOWED_TRANSITIONS: dict[RecordingStatus, frozenset[RecordingStatus]] = {
             RecordingStatus.DISK_FULL,
         }
     ),
-    RecordingStatus.STOPPING: frozenset({RecordingStatus.STOPPED}),
+    RecordingStatus.STOPPING: frozenset(
+        {RecordingStatus.STOPPED, RecordingStatus.FAILED}
+    ),
     RecordingStatus.STOPPED: frozenset(),
     RecordingStatus.FAILED: frozenset({RecordingStatus.RECOVERABLE}),
     RecordingStatus.DISK_FULL: frozenset(),
