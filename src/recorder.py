@@ -66,6 +66,50 @@ chuyển thẳng từ STARTING sang DISK_FULL/FAILED mà không cần đi qua
 RECORDING trước. session.transition_to(RECORDING) chỉ được gọi SAU KHI
 _start_segment() của đoạn đầu tiên đã thành công, giữ đúng ngữ nghĩa
 gốc trước Task 5.
+
+--- Task 7: tích hợp RecordingMetadataStore (src/recording/metadata.py) ---
+
+self._metadata_store (một RecordingMetadataStore trỏ vào session_dir
+của phiên hiện tại) được tạo trong start(), CÙNG thời điểm với
+self._storage_policy. Việc ghi session.json chỉ diễn ra ở đúng BA thời
+điểm rõ ràng, không rải rác:
+
+1. "initial metadata" — NGAY sau khi session chuyển sang STARTING và
+   session_dir đã tồn tại, TRƯỚC _enforce_storage_policy_or_abort() và
+   TRƯỚC bất kỳ VLC nào được tạo. Đây là bản ghi sớm nhất có thể, để
+   nếu crash xảy ra trước khi đoạn đầu tiên kịp ghi, session.json vẫn
+   phản ánh đúng "phiên này đã từng bắt đầu STARTING lúc nào".
+2. "finalize" — mỗi khi MỘT ĐOẠN được finalize (_finalize_active_segment
+   trong _rotate_segment()/stop()/_check_state()), NGAY sau khi finalize
+   xong (VLC của đoạn đó đã release từ trước — xem
+   _release_current_vlc_player()/_finalize_active_segment() ở trên).
+   self._session.recalculate_total_bytes() được gọi trước khi save() để
+   total_bytes trên đĩa luôn khớp tổng size_bytes các đoạn ĐÃ hoàn tất.
+3. "failure" — mỗi khi session chuyển sang một trạng thái kết thúc do
+   lỗi (DISK_FULL/FAILED, trong _enforce_storage_policy_or_abort() và
+   trong nhánh except của _rotate_segment()), NGAY sau transition đó.
+
+KHÔNG có lần ghi nào xảy ra ngay khi một đoạn MỚI bắt đầu (kể cả đoạn
+đầu tiên trong start() hay đoạn kế tiếp sau rotate) — self._session
+trong bộ nhớ vẫn là nguồn sự thật khi đang ghi dở một đoạn; session.json
+chỉ cần phản ánh đúng trạng thái tại các mốc ổn định (bắt đầu phiên,
+đoạn vừa hoàn tất, phiên kết thúc/lỗi), không cần cập nhật liên tục.
+
+Chính sách khi save() thất bại (self._persist_metadata(), xem docstring
+của hàm) chia làm hai trường hợp, tuỳ thời điểm:
+
+- Ghi "initial metadata" trong start() thất bại: KHÔNG có VLC nào đã bị
+  đụng tới ở bước này (đúng bất biến "không đụng VLC trước khi storage
+  policy cho phép"), nên start() dừng lại NGAY, coi như một lỗi khởi
+  động (cùng nhóm với lỗi mkdir ở trên) — session chuyển sang FAILED,
+  KHÔNG có _start_segment() nào được gọi, không VLC nào được tạo.
+- Ghi "finalize"/"failure" thất bại (sau khi VLC của đoạn đó đã release
+  xong): recorder KHÔNG hoàn tác các bước đã xảy ra (VLC đã release,
+  session đã transition đúng ngữ nghĩa) — một session.json không ghi
+  được không được phép biến thành việc "rò rỉ" VLC hay việc bịa/giữ lại
+  một session.json cũ sai lệch. recording_error được emit để báo lỗi ghi
+  metadata, nhưng vòng đời ghi hình (VLC/segment/session) tiếp tục như
+  không có RecordingMetadataStore.
 """
 
 import datetime
@@ -78,6 +122,7 @@ import vlc
 from config_loader import build_rtsp_url
 from recording import (
     InvalidTransitionError,
+    RecordingMetadataStore,
     RecordingSegment,
     RecordingSession,
     RecordingStatus,
@@ -125,6 +170,11 @@ class EmergencyRecorder(QObject):
         # Task 5: chính sách kiểm tra dung lượng đĩa cho phiên hiện tại
         # (tạo mới trong start(), gắn với self._session_dir của phiên đó).
         self._storage_policy: StoragePolicy | None = None
+
+        # Task 7: lưu trữ session.json cho phiên hiện tại (tạo mới trong
+        # start(), gắn với self._session_dir của phiên đó — xem ghi chú
+        # Task 7 ở đầu file cho các thời điểm ghi và chính sách lỗi).
+        self._metadata_store: RecordingMetadataStore | None = None
 
         # theo dõi trạng thái mỗi 500ms để phát hiện lỗi kết nối luồng main
         # (vd sai mật khẩu, camera không hỗ trợ main stream, mất mạng...)
@@ -180,6 +230,19 @@ class EmergencyRecorder(QObject):
         self._session = session
         self._session_dir = session_dir
         self._storage_policy = StoragePolicy(session_dir)
+        self._metadata_store = RecordingMetadataStore(session_dir)
+
+        # Task 7: ghi "initial metadata" NGAY sau khi session_dir tồn tại
+        # và session đã STARTING, TRƯỚC storage-policy check và TRƯỚC bất
+        # kỳ VLC nào (xem ghi chú Task 7 ở đầu file). Nếu ghi thất bại,
+        # coi như một lỗi khởi động — dừng lại NGAY, không tạo VLC nào,
+        # cùng cách xử lý như lỗi mkdir ở trên.
+        if not self._persist_metadata():
+            self._transition_session_safely(
+                RecordingStatus.FAILED,
+                error="Không ghi được session.json ban đầu",
+            )
+            return
 
         # Task 5: kiểm tra chính sách lưu trữ TRƯỚC khi tạo đoạn đầu
         # tiên, trong khi session vẫn còn ở STARTING (xem ghi chú Task 5
@@ -313,6 +376,48 @@ class EmergencyRecorder(QObject):
         segment.mark_completed(ended_at=_utcnow(), size_bytes=size_bytes)
         self._current_segment = None
 
+    # ------------------------------------------------------------------
+    # Task 7: tích hợp RecordingMetadataStore — xem ghi chú Task 7 ở đầu
+    # file cho ĐÚNG BA thời điểm gọi hàm này (initial/finalize/failure)
+    # và chính sách khi save() thất bại.
+    # ------------------------------------------------------------------
+
+    def _persist_metadata(self) -> bool:
+        """Ghi self._session ra session.json qua self._metadata_store.
+
+        Luôn recalculate_total_bytes() trước khi save() để total_bytes
+        trên đĩa chỉ tính các đoạn ĐÃ hoàn tất (completed=True) — không
+        bao giờ tính một đoạn đang ghi dở.
+
+        KHÔNG BAO GIỜ raise ra ngoài: mọi exception từ save() (OSError,
+        MetadataError, ...) đều bị bắt lại ở đây, emit recording_error,
+        rồi trả về False. Hàm này bản thân KHÔNG đụng tới VLC theo bất
+        kỳ cách nào — ở mọi nơi gọi hàm này, VLC của đoạn liên quan hoặc
+        chưa từng được tạo (lần ghi "initial" trong start()) hoặc đã
+        được stop()/release() từ trước (lần ghi "finalize"/"failure",
+        luôn diễn ra SAU _release_current_vlc_player()) — nên một lần
+        save() thất bại không thể khiến VLC bị rò rỉ dù caller xử lý
+        giá trị trả về (True/False) như thế nào.
+
+        Trả về True nếu ghi thành công. Caller tự quyết định phải làm gì
+        khi nhận False — start() coi đây là lỗi khởi động (dừng lại,
+        không tạo VLC); các nơi gọi khác (sau khi VLC đã release) chỉ
+        cần để recording_error đã được emit ở đây báo cho người dùng,
+        không hoàn tác bất kỳ bước nào đã xảy ra.
+        """
+        if self._session is None or self._metadata_store is None:
+            return False
+        self._session.recalculate_total_bytes()
+        try:
+            self._metadata_store.save(self._session)
+        except Exception as exc:  # noqa: BLE001 - OSError, MetadataError, ...
+            self.recording_error.emit(
+                "Không ghi được session.json (không ảnh hưởng tới file "
+                f"ghi hình đang có trên đĩa):\n{exc}"
+            )
+            return False
+        return True
+
     def _transition_session_safely(self, new_status: RecordingStatus, **kwargs):
         if self._session is None:
             return
@@ -363,6 +468,13 @@ class EmergencyRecorder(QObject):
                 "Không kiểm tra được dung lượng đĩa — đã dừng ghi hình "
                 f"khẩn cấp:\n{result.reason}"
             )
+
+        # Task 7: ghi metadata "failure" (DISK_FULL/FAILED) NGAY sau khi
+        # session đã transition — không có VLC nào bị đụng ở nhánh này
+        # (đoạn kế tiếp chưa từng được tạo), nên một lần save() thất bại
+        # ở đây chỉ thêm một recording_error nữa, không cần xử lý gì hơn
+        # (đã return False ngay sau đây).
+        self._persist_metadata()
         return False
 
     def _rotate_segment(self):
@@ -379,6 +491,13 @@ class EmergencyRecorder(QObject):
         self._release_current_vlc_player()
         self._finalize_active_segment()
 
+        # Task 7: ghi metadata "finalize" NGAY sau khi đoạn cũ đã hoàn
+        # tất — VLC của đoạn đó đã release ở bước trên, session.json giờ
+        # phản ánh đúng đoạn vừa xong + total_bytes chính xác, bất kể
+        # bước kế tiếp (storage check / tạo đoạn mới) có thành công hay
+        # không.
+        self._persist_metadata()
+
         # Task 5: kiểm tra chính sách lưu trữ TRƯỚC khi tạo đoạn kế tiếp.
         # Nếu bị từ chối, _enforce_storage_policy_or_abort() đã tự dừng
         # timer + chuyển session sang DISK_FULL/FAILED + emit
@@ -394,6 +513,11 @@ class EmergencyRecorder(QObject):
             self._segment_timer.stop()
             self._start_time = None
             self._transition_session_safely(RecordingStatus.FAILED, error=str(exc))
+            # Task 7: ghi metadata "failure" — không VLC nào bị đụng ở
+            # đây (đoạn cũ đã release ở trên, đoạn mới chưa từng được
+            # gán vào self.instance/self.media_player vì _start_segment()
+            # chỉ gán sau khi mọi bước thành công).
+            self._persist_metadata()
             self.recording_error.emit(
                 "Không thể bắt đầu đoạn ghi hình kế tiếp — đã dừng ghi hình "
                 f"khẩn cấp:\n{exc}"
@@ -419,6 +543,10 @@ class EmergencyRecorder(QObject):
                 RecordingStatus.FAILED,
                 error="Mất kết nối luồng ghi hình (main)",
             )
+            # Task 7: ghi metadata "failure" — VLC đã release ở trên,
+            # đoạn hiện tại đã finalize (completed=True) trước lần ghi
+            # này, khớp docstring _persist_metadata().
+            self._persist_metadata()
             self.recording_error.emit(
                 "Mất kết nối luồng ghi hình (main) — file có thể không đầy đủ:\n"
                 f"{path}"
@@ -438,5 +566,12 @@ class EmergencyRecorder(QObject):
 
         self._transition_session_safely(RecordingStatus.STOPPING)
         self._transition_session_safely(RecordingStatus.STOPPED)
+
+        # Task 7: ghi metadata "final" — MỘT lần ghi duy nhất, sau khi cả
+        # đoạn cuối đã finalize (ở trên) VÀ session đã STOPPED (ended_at
+        # đã được set), nên bản ghi này chứa đầy đủ: đoạn cuối completed,
+        # total_bytes chính xác, status STOPPED, ended_at khớp thời điểm
+        # dừng thật.
+        self._persist_metadata()
 
         self.recording_stopped.emit(path or "")

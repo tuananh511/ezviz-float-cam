@@ -25,7 +25,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from recorder import SEGMENT_DURATION_S, EmergencyRecorder
-from recording import DEFAULT_LOW_FREE_BYTES, DEFAULT_MIN_FREE_BYTES, RecordingStatus
+from recording import (
+    DEFAULT_LOW_FREE_BYTES,
+    DEFAULT_MIN_FREE_BYTES,
+    RecordingMetadataStore,
+    RecordingStatus,
+)
 
 
 RTSP_CFG = {
@@ -909,3 +914,172 @@ def test_rotation_allow_low_space_starts_next_segment(
     assert len(rec._session.segments) == 2
     assert len(segment_vlc) == 2
     assert rec._session.status == RecordingStatus.RECORDING
+
+
+# ---------------------------------------------------------------------
+# 15. Task 7 — RecordingMetadataStore integration
+#
+# These tests load the actual session.json written to tmp_path (via a
+# fresh RecordingMetadataStore pointed at rec._session_dir) and assert
+# on its CONTENT — not merely that save() was called.
+# ---------------------------------------------------------------------
+
+
+def test_start_persists_initial_metadata(tmp_path, wired_vlc):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    metadata_path = rec._session_dir / "session.json"
+    assert metadata_path.is_file()
+
+    loaded = RecordingMetadataStore(rec._session_dir).load()
+
+    # start() persists "initial metadata" exactly once, BEFORE the
+    # storage-policy check and BEFORE the first segment/VLC is created
+    # (see the Task 7 notes in recorder.py) — so this on-disk snapshot
+    # still shows STARTING with no segments, even though the in-memory
+    # session has since moved on to RECORDING with its first segment.
+    assert loaded.session_id == rec._session.session_id
+    assert loaded.status == RecordingStatus.STARTING
+    assert loaded.segments == []
+    assert loaded.total_bytes == 0
+
+
+def test_segment_rotation_persists_finalized_segment_metadata(
+    tmp_path, segment_vlc
+):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    first_segment_path = rec._filepath
+
+    rec._rotate_segment()
+
+    loaded = RecordingMetadataStore(rec._session_dir).load()
+
+    assert loaded.session_id == rec._session.session_id
+    assert len(loaded.segments) == 1
+    assert loaded.segments[0].path == first_segment_path
+    assert loaded.segments[0].completed is True
+    assert loaded.segments[0].ended_at is not None
+    assert loaded.total_bytes == rec._session.total_bytes
+
+
+def test_stop_persists_final_metadata(tmp_path, wired_vlc):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    session_dir = rec._session_dir
+
+    rec.stop()
+
+    loaded = RecordingMetadataStore(session_dir).load()
+
+    assert loaded.status == RecordingStatus.STOPPED
+    assert loaded.ended_at is not None
+    assert loaded.ended_at == rec._session.ended_at
+    assert len(loaded.segments) == 1
+    assert loaded.segments[0].completed is True
+    assert loaded.total_bytes == rec._session.total_bytes
+
+
+def test_check_state_vlc_error_persists_failed_metadata(
+    tmp_path, wired_vlc, fake_vlc
+):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    session_dir = rec._session_dir
+
+    wired_vlc.media_player.get_state.return_value = fake_vlc.State.Error
+    rec._check_state()
+
+    loaded = RecordingMetadataStore(session_dir).load()
+
+    assert loaded.status == RecordingStatus.FAILED
+    assert loaded.error is not None
+    assert len(loaded.segments) == 1
+    assert loaded.segments[0].completed is True
+
+
+def test_start_disk_full_persists_disk_full_metadata(
+    tmp_path, fake_vlc, monkeypatch
+):
+    monkeypatch.setattr(
+        shutil,
+        "disk_usage",
+        _fake_disk_usage(total=10_000_000_000, used=9_999_900_000, free=100_000),
+    )
+
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    loaded = RecordingMetadataStore(rec._session_dir).load()
+
+    assert loaded.status == RecordingStatus.DISK_FULL
+    assert loaded.segments == []
+    assert loaded.error is not None
+
+
+def test_metadata_write_failure_on_start_aborts_before_any_vlc(
+    tmp_path, fake_vlc, monkeypatch
+):
+    """Explicit metadata-failure policy for start(): the "initial
+    metadata" write happens before any VLC is touched, so if it fails,
+    start() must abort right there (same treatment as the mkdir failure
+    above) — no VLC instance is ever created, and the session ends up
+    FAILED rather than silently RECORDING with no metadata on disk."""
+
+    def _boom(self, session):
+        raise OSError("disk write failed (test)")
+
+    monkeypatch.setattr(RecordingMetadataStore, "save", _boom)
+
+    rec = EmergencyRecorder()
+    errors = []
+    started = []
+    rec.recording_error.connect(errors.append)
+    rec.recording_started.connect(started.append)
+
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    assert rec.is_recording() is False
+    assert rec.instance is None
+    assert rec.media_player is None
+    assert started == []
+    assert len(errors) == 1
+    assert rec._session.status == RecordingStatus.FAILED
+    fake_vlc.Instance.assert_not_called()
+
+
+def test_metadata_write_failure_during_stop_does_not_leak_vlc_or_raise(
+    tmp_path, wired_vlc, monkeypatch
+):
+    """Explicit metadata-failure policy after VLC has already been
+    released (stop()/_rotate_segment()/_check_state()): a save()
+    failure must not raise out of stop(), must not leave any VLC handle
+    behind (it was already released before this write is attempted),
+    and must not block the session from reaching its correct terminal
+    state — it only surfaces as an extra recording_error."""
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    def _boom(session):
+        raise OSError("disk write failed (test)")
+
+    monkeypatch.setattr(rec._metadata_store, "save", _boom)
+
+    errors = []
+    stopped = []
+    rec.recording_error.connect(errors.append)
+    rec.recording_stopped.connect(stopped.append)
+
+    rec.stop()  # must not raise
+
+    wired_vlc.media_player.stop.assert_called_once()
+    wired_vlc.media_player.release.assert_called_once()
+    wired_vlc.instance.release.assert_called_once()
+    assert rec.instance is None
+    assert rec.media_player is None
+    assert rec.is_recording() is False
+    assert rec._session.status == RecordingStatus.STOPPED
+    assert len(stopped) == 1
+    assert len(errors) == 1
+    assert "session.json" in errors[0]
