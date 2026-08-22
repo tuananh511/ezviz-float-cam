@@ -18,10 +18,12 @@ in conftest.py.
 import re
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
-from recorder import EmergencyRecorder
+from recorder import SEGMENT_DURATION_S, EmergencyRecorder
+from recording import RecordingStatus
 
 
 RTSP_CFG = {
@@ -80,7 +82,13 @@ def test_start_creates_target_dir_and_transitions_to_recording(tmp_path, wired_v
     assert save_dir.exists() and save_dir.is_dir()
     assert rec.is_recording() is True
     assert started_paths == [rec._filepath]
-    assert Path(rec._filepath).parent == save_dir
+    # CHANGED (Task 3): segmented recording gives each session its own
+    # save_dir/emergency_<session_id>/ subdirectory instead of writing the
+    # file directly into save_dir — the segment's parent is now the
+    # session directory, which itself lives inside save_dir.
+    session_dir = Path(rec._filepath).parent
+    assert session_dir.parent == save_dir
+    assert session_dir.name == f"emergency_{rec._session.session_id}"
 
 
 def test_start_falls_back_to_default_recording_dir_when_save_dir_blank(
@@ -93,7 +101,12 @@ def test_start_falls_back_to_default_recording_dir_when_save_dir_blank(
     rec.start(RTSP_CFG, save_dir="")
 
     assert fake_default.exists()
-    assert Path(rec._filepath).parent == fake_default
+    # CHANGED (Task 3): same reasoning as
+    # test_start_creates_target_dir_and_transitions_to_recording above —
+    # the segment now lives one level deeper, inside the session
+    # subdirectory, not directly inside the resolved base directory.
+    session_dir = Path(rec._filepath).parent
+    assert session_dir.parent == fake_default
 
 
 def test_start_second_call_while_recording_is_ignored(tmp_path, wired_vlc):
@@ -279,8 +292,13 @@ def test_recording_filename_format(tmp_path, wired_vlc):
     rec = EmergencyRecorder()
     rec.start(RTSP_CFG, save_dir=str(tmp_path))
 
-    filename = Path(rec._filepath).name
-    assert re.fullmatch(r"emergency_\d{8}_\d{6}\.mkv", filename), filename
+    # CHANGED (Task 3): the "emergency_" prefix + session id now live in
+    # the SESSION DIRECTORY name (emergency_<session_id>/), matching the
+    # task spec's example layout, so the per-segment filename itself is
+    # just the sortable timestamp (e.g. 20260821_173000.mkv).
+    segment_path = Path(rec._filepath)
+    assert re.fullmatch(r"\d{8}_\d{6}(_\d{2})?\.mkv", segment_path.name), segment_path.name
+    assert segment_path.parent.name == f"emergency_{rec._session.session_id}"
 
 
 # ---------------------------------------------------------------------
@@ -363,4 +381,332 @@ def test_recorder_functions_fully_without_any_window_or_widget_created(
     assert rec.is_recording() is True
 
     rec.stop()
+    assert rec.is_recording() is False
+
+
+# ---------------------------------------------------------------------
+# 12. Task 3 — segmented emergency recording
+# ---------------------------------------------------------------------
+
+
+def test_segment_duration_defaults_to_300_seconds():
+    assert SEGMENT_DURATION_S == 300
+
+
+def test_segment_timer_interval_matches_segment_duration(tmp_path, wired_vlc):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    assert rec._segment_timer.interval() == SEGMENT_DURATION_S * 1000
+
+
+def test_start_creates_session_subdirectory(tmp_path, wired_vlc):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    session_dir = tmp_path / f"emergency_{rec._session.session_id}"
+    assert session_dir.exists() and session_dir.is_dir()
+    assert Path(rec._filepath).parent == session_dir
+
+
+def test_start_session_has_first_segment(tmp_path, wired_vlc):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    assert len(rec._session.segments) == 1
+    first_segment = rec._session.segments[0]
+    assert first_segment.path == rec._filepath
+    assert first_segment.completed is False
+    assert rec._session.status == RecordingStatus.RECORDING
+
+
+def test_segment_rotation_creates_second_segment_same_session(tmp_path, segment_vlc):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    first_path = rec._filepath
+    session_id = rec._session.session_id
+
+    rec._rotate_segment()
+
+    assert rec.is_recording() is True
+    assert rec._session.session_id == session_id
+    assert len(rec._session.segments) == 2
+    assert rec._filepath != first_path
+    assert Path(rec._filepath).parent == Path(first_path).parent
+
+
+def test_segment_rotation_finalizes_previous_segment_before_next_starts(
+    tmp_path, segment_vlc
+):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    first_segment = rec._session.segments[0]
+    assert first_segment.completed is False
+
+    rec._rotate_segment()
+
+    assert first_segment.completed is True
+    assert first_segment.ended_at is not None
+    # segment 0's player must be stopped/released (finalized) before
+    # segment 1's VLC instance gets created
+    segment_vlc[0].media_player.stop.assert_called_once()
+    segment_vlc[0].media_player.release.assert_called_once()
+    segment_vlc[0].instance.release.assert_called_once()
+    assert len(segment_vlc) == 2
+    assert rec._session.segments[1].completed is False
+
+
+def test_only_one_rotation_timer_exists(tmp_path, segment_vlc):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    timer = rec._segment_timer
+    assert timer.isActive()
+    assert timer.isSingleShot()
+
+    rec._rotate_segment()
+    rec._rotate_segment()
+
+    # same QTimer object reused for every rotation — never a second timer
+    assert rec._segment_timer is timer
+    assert timer.isActive()
+    assert timer.isSingleShot()
+
+
+def test_stop_stops_rotation_timer(tmp_path, wired_vlc):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    assert rec._segment_timer.isActive()
+
+    rec.stop()
+
+    assert not rec._segment_timer.isActive()
+
+
+def test_stop_finalizes_session(tmp_path, wired_vlc):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    session = rec._session
+
+    rec.stop()
+
+    assert session.status == RecordingStatus.STOPPED
+    assert session.ended_at is not None
+    assert session.segments[-1].completed is True
+
+
+def test_stop_does_not_create_another_segment(tmp_path, segment_vlc):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    rec.stop()
+
+    assert len(rec._session.segments) == 1
+    assert len(segment_vlc) == 1
+
+
+def test_starting_recorder_twice_does_not_create_multiple_sessions(
+    tmp_path, wired_vlc
+):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    session = rec._session
+
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))  # ignored — already recording
+
+    assert rec._session is session
+    assert len(session.segments) == 1
+
+
+def test_failure_starting_next_segment_transitions_failed_and_emits_error(
+    tmp_path, fake_vlc
+):
+    good_instance = MagicMock(name="vlc_instance_ok")
+    good_media_player = MagicMock(name="media_player_ok")
+    good_media = MagicMock(name="media_ok")
+    good_instance.media_player_new.return_value = good_media_player
+    good_instance.media_new.return_value = good_media
+    good_media_player.get_state.return_value = fake_vlc.State.Playing
+
+    fake_vlc.Instance.side_effect = [
+        good_instance,
+        RuntimeError("libvlc init failed for next segment"),
+    ]
+
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    errors = []
+    rec.recording_error.connect(errors.append)
+
+    rec._rotate_segment()  # second segment fails to start
+
+    assert rec.is_recording() is False
+    assert rec.instance is None
+    assert rec.media_player is None
+    assert len(errors) == 1
+    assert rec._session.status == RecordingStatus.FAILED
+    assert not rec._segment_timer.isActive()
+    assert not rec._watchdog.isActive()
+    # the first segment's player was released before the failed attempt
+    # to start the second one
+    good_media_player.stop.assert_called_once()
+    good_media_player.release.assert_called_once()
+
+
+# ---------------------------------------------------------------------
+# 13. Task 3 fix — finalize-after-stop ordering, _start_segment() leak safety
+# ---------------------------------------------------------------------
+
+
+def test_rotation_stops_and_releases_old_player_before_finalizing_segment(
+    tmp_path, segment_vlc, monkeypatch
+):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    first_segment = rec._session.segments[0]
+
+    call_order = []
+    segment_vlc[0].media_player.stop.side_effect = lambda: call_order.append(
+        "player_stop"
+    )
+    segment_vlc[0].media_player.release.side_effect = lambda: call_order.append(
+        "player_release"
+    )
+    segment_vlc[0].instance.release.side_effect = lambda: call_order.append(
+        "instance_release"
+    )
+    original_mark_completed = first_segment.mark_completed
+
+    def _tracked_mark_completed(*args, **kwargs):
+        call_order.append("mark_completed")
+        return original_mark_completed(*args, **kwargs)
+
+    monkeypatch.setattr(first_segment, "mark_completed", _tracked_mark_completed)
+
+    rec._rotate_segment()
+
+    assert call_order == [
+        "player_stop",
+        "player_release",
+        "instance_release",
+        "mark_completed",
+    ]
+    assert first_segment.completed is True
+
+
+def test_stop_stops_and_releases_player_before_finalizing_segment(
+    tmp_path, wired_vlc, monkeypatch
+):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    segment = rec._session.segments[0]
+
+    call_order = []
+    wired_vlc.media_player.stop.side_effect = lambda: call_order.append(
+        "player_stop"
+    )
+    wired_vlc.media_player.release.side_effect = lambda: call_order.append(
+        "player_release"
+    )
+    wired_vlc.instance.release.side_effect = lambda: call_order.append(
+        "instance_release"
+    )
+    original_mark_completed = segment.mark_completed
+
+    def _tracked_mark_completed(*args, **kwargs):
+        call_order.append("mark_completed")
+        return original_mark_completed(*args, **kwargs)
+
+    monkeypatch.setattr(segment, "mark_completed", _tracked_mark_completed)
+
+    rec.stop()
+
+    assert call_order == [
+        "player_stop",
+        "player_release",
+        "instance_release",
+        "mark_completed",
+    ]
+    assert segment.completed is True
+
+
+def test_check_state_error_stops_and_releases_player_before_finalizing_segment(
+    tmp_path, wired_vlc, monkeypatch
+):
+    rec = EmergencyRecorder()
+    rec.start(RTSP_CFG, save_dir=str(tmp_path))
+    segment = rec._session.segments[0]
+    wired_vlc.media_player.get_state.return_value = "Error"  # == fake vlc.State.Error
+
+    call_order = []
+    wired_vlc.media_player.stop.side_effect = lambda: call_order.append(
+        "player_stop"
+    )
+    wired_vlc.media_player.release.side_effect = lambda: call_order.append(
+        "player_release"
+    )
+    wired_vlc.instance.release.side_effect = lambda: call_order.append(
+        "instance_release"
+    )
+    original_mark_completed = segment.mark_completed
+
+    def _tracked_mark_completed(*args, **kwargs):
+        call_order.append("mark_completed")
+        return original_mark_completed(*args, **kwargs)
+
+    monkeypatch.setattr(segment, "mark_completed", _tracked_mark_completed)
+
+    rec._check_state()
+
+    assert call_order == [
+        "player_stop",
+        "player_release",
+        "instance_release",
+        "mark_completed",
+    ]
+    assert segment.completed is True
+    assert rec._session.status == RecordingStatus.FAILED
+
+
+def test_start_segment_cleans_up_local_resources_on_setup_failure(tmp_path, fake_vlc):
+    instance_mock = MagicMock(name="vlc_instance")
+    media_player_mock = MagicMock(name="media_player")
+    media_mock = MagicMock(name="media")
+    instance_mock.media_player_new.return_value = media_player_mock
+    instance_mock.media_new.return_value = media_mock
+    media_player_mock.play.side_effect = RuntimeError("play failed")
+    fake_vlc.Instance.return_value = instance_mock
+
+    rec = EmergencyRecorder()
+
+    with pytest.raises(RuntimeError):
+        rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    # The locally-created media player/instance must be cleaned up before
+    # the exception propagates (Task 1 characterization: start() still
+    # lets the exception itself escape uncaught for the first segment).
+    media_player_mock.stop.assert_called_once()
+    media_player_mock.release.assert_called_once()
+    instance_mock.release.assert_called_once()
+    assert rec.instance is None
+    assert rec.media_player is None
+    assert rec.is_recording() is False
+
+
+def test_start_segment_cleans_up_instance_when_media_player_new_fails(
+    tmp_path, fake_vlc
+):
+    instance_mock = MagicMock(name="vlc_instance")
+    instance_mock.media_player_new.side_effect = RuntimeError("player_new failed")
+    fake_vlc.Instance.return_value = instance_mock
+
+    rec = EmergencyRecorder()
+
+    with pytest.raises(RuntimeError):
+        rec.start(RTSP_CFG, save_dir=str(tmp_path))
+
+    # media_player was never created, so only the instance needs releasing.
+    instance_mock.release.assert_called_once()
+    assert rec.instance is None
+    assert rec.media_player is None
     assert rec.is_recording() is False
