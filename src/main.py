@@ -23,6 +23,62 @@ def _mask_credentials(url: str) -> str:
     return re.sub(r"://[^@/]+@", "://***:***@", url)
 
 
+def _notify_startup_recovery_result(tray: QSystemTrayIcon, report) -> None:
+    """Task 12: surface the RecoveryReport (Task 8/`recording.recovery`)
+    returned by `run_startup_recovery()` (Task 11) to the user, through
+    the tray icon's existing (Qt-native, inherited from QSystemTrayIcon)
+    `showMessage()` balloon-notification API — no new notification
+    mechanism, no new TrayIcon method.
+
+    This function only *reads* the report and decides what (if anything)
+    to display; it never re-runs, extends, or second-guesses recovery
+    itself, and never touches the filesystem, VLC, or RTSP.
+
+    - report is None (recovery raised, see the try/except around
+      run_startup_recovery() in main()) or entirely empty (nothing to
+      recover) -> no notification at all.
+    - report.recovered non-empty -> one Information-level notification
+      with a concise count only (no paths, no session IDs).
+    - report.invalid or report.failed non-empty -> one separate
+      Warning-level notification with a concise count only (no raw
+      exception text/tracebacks — SessionRecoveryResult.error is never
+      surfaced to the user here).
+
+    Never raises: a notification failure (e.g. no system tray available,
+    or showMessage() itself erroring) must not prevent application
+    startup, so any exception here is caught and logged, matching the
+    same app-boundary try/except pattern Task 11 already uses around
+    run_startup_recovery() itself.
+    """
+    if report is None:
+        return
+
+    try:
+        recovered_count = len(report.recovered)
+        problem_count = len(report.invalid) + len(report.failed)
+
+        if recovered_count > 0:
+            tray.showMessage(
+                "EzvizFloatCam",
+                f"Đã khôi phục {recovered_count} phiên ghi hình khẩn cấp bị "
+                "gián đoạn từ lần chạy trước.",
+                QSystemTrayIcon.Information,
+                5000,
+            )
+
+        if problem_count > 0:
+            tray.showMessage(
+                "EzvizFloatCam",
+                f"{problem_count} phiên ghi hình trước đó không thể khôi "
+                "phục hoàn toàn.",
+                QSystemTrayIcon.Warning,
+                5000,
+            )
+    except Exception as exc:  # noqa: BLE001 — xem docstring: không được
+        # chặn khởi động app chỉ vì hiện thông báo thất bại.
+        print(f"[WARN] Hiện thông báo khôi phục ghi hình thất bại, bỏ qua: {exc}")
+
+
 def main():
     app = QApplication(sys.argv)
     # App chỉ thoát khi người dùng chọn "Thoát" ở tray, KHÔNG thoát khi cửa
@@ -57,8 +113,9 @@ def main():
     # dụng này để một lỗi tích hợp không lường trước không chặn app khởi
     # động.
     save_dir = config.get("recording", {}).get("save_dir", "")
+    recovery_report = None
     try:
-        run_startup_recovery(save_dir)
+        recovery_report = run_startup_recovery(save_dir)
     except Exception as exc:  # noqa: BLE001 — ranh giới ứng dụng, xem chú thích trên
         print(f"[WARN] Startup recording recovery thất bại, bỏ qua: {exc}")
 
@@ -66,6 +123,11 @@ def main():
     window.show()
 
     tray = TrayIcon(window, app)  # noqa: F841 — giữ tham chiếu sống suốt vòng đời app
+
+    # Task 12: báo cho người dùng biết kết quả khôi phục ở trên (nếu có gì
+    # đáng nói) — phải chạy SAU khi tray đã dựng xong (cần tray làm nơi
+    # hiện balloon notification), nhưng vẫn trước app.exec().
+    _notify_startup_recovery_result(tray, recovery_report)
 
     # bắt đầu phát sau khi cửa sổ đã hiện ra (tránh lỗi bind window handle quá
     # sớm); start_stream() cũng áp dụng lại trạng thái mute đã lưu từ lần

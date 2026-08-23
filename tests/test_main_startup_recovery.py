@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import subprocess
 import sys
 import textwrap
@@ -151,6 +152,8 @@ def _run_main_driver(recovery_side_effect: str = "pass") -> dict:
         [sys.executable, "-c", script],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        env=dict(os.environ, PYTHONIOENCODING="utf-8"),
         timeout=30,
     )
     assert proc.returncode == 0, (
