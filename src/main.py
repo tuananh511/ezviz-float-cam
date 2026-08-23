@@ -14,6 +14,7 @@ from PySide6.QtCore import QTimer
 from config_loader import load_config, build_rtsp_url, get_app_icon_path
 from glass_window import GlassWindow
 from tray import TrayIcon
+from recording.startup import run_startup_recovery
 
 
 def _mask_credentials(url: str) -> str:
@@ -45,6 +46,21 @@ def main():
     config = load_config()
     rtsp_url = build_rtsp_url(config["rtsp"])
     print(f"[INFO] Đang kết nối tới: {_mask_credentials(rtsp_url)}")
+
+    # Startup crash recovery (Task 11): phải chạy trước khi bất kỳ
+    # EmergencyRecorder/GlassWindow nào được dựng lên, để các phiên ghi hình
+    # bị bỏ dở do crash/mất điện lần trước được đưa về trạng thái kết thúc
+    # (FAILED) trước khi có cơ hội ghi đè hoặc bị VLC động vào. Chỉ chạy
+    # đúng một lần mỗi tiến trình. run_startup_recovery() tự nó không bao
+    # giờ raise theo tài liệu (recover_all trả về RecoveryReport, không
+    # raise cho từng phiên lỗi), nhưng vẫn bọc try/except ở ranh giới ứng
+    # dụng này để một lỗi tích hợp không lường trước không chặn app khởi
+    # động.
+    save_dir = config.get("recording", {}).get("save_dir", "")
+    try:
+        run_startup_recovery(save_dir)
+    except Exception as exc:  # noqa: BLE001 — ranh giới ứng dụng, xem chú thích trên
+        print(f"[WARN] Startup recording recovery thất bại, bỏ qua: {exc}")
 
     window = GlassWindow(config, rtsp_url)
     window.show()
