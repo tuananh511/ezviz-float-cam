@@ -27,6 +27,15 @@ existing .mkv segment evidence and reconciles interrupted sessions
 deletes a file and never resumes VLC/RTSP recording automatically. Also
 standard-library only: no PySide6, no VLC. Not wired into any
 auto-run-at-startup path — a caller decides when/whether to invoke it.
+
+Task 9 adds startup.py (run_startup_recovery) — the single public entry
+point a later task calls to run Task 8's recover_all() at application
+startup, before a new EmergencyRecorder session can start. It resolves
+the directory to scan (falling back to the same default recorder.py
+falls back to) and otherwise only delegates to recover_all(); no
+recovery/discovery logic is reimplemented. Still standard-library only:
+no PySide6, no VLC. Does not wire itself into main.py/glass_window.py —
+that remains a later task.
 """
 
 from .metadata import (
@@ -42,6 +51,11 @@ from .recovery import (
     discover_session_dirs,
     recover_all,
     recover_session,
+)
+from .startup import (
+    DEFAULT_RECORDING_SUBDIR,
+    resolve_recording_base_dir,
+    run_startup_recovery,
 )
 from .session import (
     InvalidTransitionError,
@@ -79,4 +93,7 @@ __all__ = [
     "discover_session_dirs",
     "recover_all",
     "recover_session",
+    "DEFAULT_RECORDING_SUBDIR",
+    "resolve_recording_base_dir",
+    "run_startup_recovery",
 ]
