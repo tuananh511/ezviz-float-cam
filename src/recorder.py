@@ -312,6 +312,7 @@ class EmergencyRecorder(QObject):
         vlc_args = ["--no-xlib", "--rtsp-tcp", "--quiet"]
         instance = None
         media_player = None
+        media = None
         try:
             instance = vlc.Instance(vlc_args)
             media_player = instance.media_player_new()
@@ -325,9 +326,19 @@ class EmergencyRecorder(QObject):
             media_player.set_media(media)
             media_player.play()
         except Exception:
+            # Task 10: "media" (từ instance.media_new()) là TÀI NGUYÊN VLC
+            # THỨ BA có thể đã được tạo cục bộ trước khi một bước sau đó
+            # (add_option/set_media/play) thất bại — trước bản vá này, chỉ
+            # media_player/instance được release() ở đây, còn media thì
+            # KHÔNG, bất kể docstring phía trên đã claim ngược lại. Giải
+            # phóng nó ở đây khớp đúng nguyên tắc "mọi tài nguyên VLC cục bộ
+            # đã tạo phải được dọn trước khi exception propagate" cho CẢ BA
+            # loại tài nguyên (Instance/MediaPlayer/Media), không chỉ hai.
             if media_player is not None:
                 media_player.stop()
                 media_player.release()
+            if media is not None:
+                media.release()
             if instance is not None:
                 instance.release()
             raise
