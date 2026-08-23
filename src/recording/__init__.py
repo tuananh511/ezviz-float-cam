@@ -36,6 +36,15 @@ falls back to) and otherwise only delegates to recover_all(); no
 recovery/discovery logic is reimplemented. Still standard-library only:
 no PySide6, no VLC. Does not wire itself into main.py/glass_window.py —
 that remains a later task.
+
+Task 13 adds retention.py (is_eligible_for_cleanup/find_eligible_sessions)
+— a standalone policy that decides whether a persisted RecordingSession
+is eligible for cleanup (terminal status + protected=False + old enough
+per a caller-supplied cutoff). It never deletes a file, never lists a
+directory, and is not wired into recorder.py, main.py, any UI, startup,
+or StoragePolicy — same standalone-first pattern as storage.py/
+metadata.py/recovery.py before their own later integration tasks. Still
+standard-library only: no PySide6, no VLC.
 """
 
 from .metadata import (
@@ -71,6 +80,11 @@ from .storage import (
     StorageDecision,
     StoragePolicy,
 )
+from .retention import (
+    RetentionCriteria,
+    find_eligible_sessions,
+    is_eligible_for_cleanup,
+)
 
 __all__ = [
     "InvalidTransitionError",
@@ -96,4 +110,7 @@ __all__ = [
     "DEFAULT_RECORDING_SUBDIR",
     "resolve_recording_base_dir",
     "run_startup_recovery",
+    "RetentionCriteria",
+    "find_eligible_sessions",
+    "is_eligible_for_cleanup",
 ]
