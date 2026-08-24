@@ -6,6 +6,6 @@ cửa sổ. Cập nhật số này mỗi khi hoàn thành 1 sprint lớn (đồn
 """
 
 APP_NAME = "EzvizFloatCam"
-APP_VERSION = "0.5.6"
+APP_VERSION = "0.8.0"
 GITHUB_URL = "https://github.com/tuananh511/ezviz-float-cam"
 LICENSE_NAME = "MIT License"

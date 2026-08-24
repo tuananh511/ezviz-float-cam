@@ -45,6 +45,14 @@ Thư viện Python (`requirements.txt`): `PySide6>=6.6.0`, `python-vlc>=3.0.2000
 
 ## Cài đặt / thiết lập
 
+### Người dùng cuối — tải về dùng ngay
+
+Không cần cài Python. Vào [Releases](https://github.com/tuananh511/ezviz-float-cam/releases), tải `EzvizFloatCam.exe` (bản mới nhất), lưu vào một thư mục bất kỳ rồi chạy trực tiếp.
+
+Yêu cầu duy nhất: đã cài sẵn [VLC media player](https://www.videolan.org/vlc/) bản desktop (để có `libvlc.dll`).
+
+### Nhà phát triển — chạy từ mã nguồn
+
 ```bash
 git clone https://github.com/tuananh511/ezviz-float-cam.git
 cd ezviz-float-cam
@@ -53,7 +61,7 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Để đóng gói thành `.exe`/installer riêng: xem thêm `requirements-dev.txt`, `build_exe.bat` và `installer/setup.iss`.
+Để tự build `.exe`: cài `requirements-dev.txt` rồi chạy `build_exe.bat` (cần tự tạo `ezvizfloatcam.spec`, xem comment trong file này).
 
 ## Chạy ứng dụng
 
@@ -89,7 +97,6 @@ src/
   recording/              # domain model + policy cho ghi hình (xem bảng kiến trúc ở trên)
 tests/                    # pytest, ánh xạ theo từng module trên
 config/default_config.json
-installer/setup.iss        # cấu hình Inno Setup
 build_exe.bat               # build .exe bằng PyInstaller
 ```
 
