@@ -20,7 +20,15 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QTimer
 
 from config_loader import build_rtsp_url
+from motion import (
+    POST_ROLL_MAX_S, POST_ROLL_MIN_S, SENSITIVITY_PRESETS, get_motion_config,
+)
 from recorder import default_recording_dir
+from recording import resolve_recording_base_dir
+from recording.cleanup import (
+    MAX_MAX_GB, MIN_MAX_GB, get_retention_config, summarize_usage,
+)
+from recording.summary import format_size
 import autostart
 
 _TEST_TIMEOUT_MS = 6000
@@ -105,6 +113,43 @@ class SettingsDialog(QDialog):
         record_dir_row.addWidget(self.record_browse_btn)
         record_dir_row.addWidget(self.record_default_btn)
 
+        # Ghi tự động khi có chuyển động (độc lập với nút REC thủ công).
+        motion_cfg = get_motion_config(config)
+        self.motion_check = QCheckBox("Tự động ghi khi phát hiện chuyển động")
+        self.motion_check.setChecked(motion_cfg["enabled"])
+
+        self.motion_sens_combo = QComboBox()
+        self.motion_sens_combo.addItem("Thấp — ít báo nhầm", "low")
+        self.motion_sens_combo.addItem("Vừa (khuyến nghị)", "medium")
+        self.motion_sens_combo.addItem("Cao — nhạy, dễ báo nhầm", "high")
+        idx = self.motion_sens_combo.findData(motion_cfg["sensitivity"])
+        self.motion_sens_combo.setCurrentIndex(idx if idx >= 0 else 1)
+
+        self.motion_post_roll_spin = QSpinBox()
+        self.motion_post_roll_spin.setRange(POST_ROLL_MIN_S, POST_ROLL_MAX_S)
+        self.motion_post_roll_spin.setSuffix(" giây")
+        self.motion_post_roll_spin.setValue(motion_cfg["post_roll_s"])
+
+        # Giới hạn dung lượng thư mục ghi hình + tự xoá bản ghi TỰ ĐỘNG cũ.
+        retention_cfg = get_retention_config(config)
+        self.retention_check = QCheckBox("Tự xoá bản ghi tự động cũ khi đầy")
+        self.retention_check.setToolTip(
+            "Khi tổng dung lượng thư mục ghi hình vượt ngưỡng, xoá dần các lần ghi "
+            "TỰ ĐỘNG cũ nhất. Ghi thủ công (nút REC) không bao giờ bị tự xoá, "
+            "nhưng vẫn tính vào dung lượng."
+        )
+        self.retention_check.setChecked(retention_cfg["enabled"])
+
+        self.retention_spin = QSpinBox()
+        self.retention_spin.setRange(MIN_MAX_GB, MAX_MAX_GB)
+        self.retention_spin.setSuffix(" GB")
+        self.retention_spin.setValue(retention_cfg["max_gb"])
+
+        self.retention_usage_label = QLabel(self._usage_text(config))
+        self.retention_usage_label.setWordWrap(True)
+        self.retention_usage_label.setMinimumHeight(36)
+        self.retention_usage_label.setStyleSheet("color: #9a9aa2;")
+
         form = QFormLayout()
         form.addRow("Địa chỉ IP camera:", self.ip_edit)
         form.addRow("Port:", self.port_spin)
@@ -115,6 +160,12 @@ class SettingsDialog(QDialog):
         form.addRow("Channel (nâng cao):", self.channel_edit)
         form.addRow("", self.autostart_check)
         form.addRow("Thư mục lưu ghi hình khẩn cấp:", record_dir_row)
+        form.addRow("", self.motion_check)
+        form.addRow("Độ nhạy chuyển động:", self.motion_sens_combo)
+        form.addRow("Ghi thêm sau chuyển động cuối:", self.motion_post_roll_spin)
+        form.addRow("", self.retention_check)
+        form.addRow("Dung lượng tối đa thư mục ghi hình:", self.retention_spin)
+        form.addRow("", self.retention_usage_label)
 
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
@@ -171,6 +222,36 @@ class SettingsDialog(QDialog):
         """Gọi sau khi exec() trả về Accepted để lấy thư mục lưu ghi hình
         khẩn cấp mới (Sprint 5.5)."""
         return {"save_dir": self.record_dir_edit.text().strip()}
+
+    @staticmethod
+    def _usage_text(config: dict) -> str:
+        """Mức dùng hiện tại của thư mục ghi hình (theo thư mục ĐÃ LƯU)."""
+        try:
+            base = resolve_recording_base_dir(config.get("recording", {}).get("save_dir", ""))
+            u = summarize_usage(base)
+        except Exception:  # noqa: BLE001 — chỉ là thông tin phụ
+            return ""
+        return (
+            f"Đang dùng {format_size(u['total'])}: "
+            f"{format_size(u['auto'])} tự động (có thể xoá), "
+            f"{format_size(u['protected'])} được giữ (thủ công/đang ghi)"
+        )
+
+    def get_retention_settings(self) -> dict:
+        """Gọi sau khi exec() trả về Accepted để lấy cấu hình tự xoá."""
+        return {
+            "enabled": self.retention_check.isChecked(),
+            "max_gb": self.retention_spin.value(),
+        }
+
+    def get_motion_config(self) -> dict:
+        """Gọi sau khi exec() trả về Accepted để lấy cấu hình ghi tự động theo
+        chuyển động (chỉ các khoá mà dialog này quản lý)."""
+        return {
+            "enabled": self.motion_check.isChecked(),
+            "sensitivity": self.motion_sens_combo.currentData(),
+            "post_roll_s": self.motion_post_roll_spin.value(),
+        }
 
     # ---------- thư mục lưu ghi hình khẩn cấp (Sprint 5.5) ----------
 

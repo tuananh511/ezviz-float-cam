@@ -1,29 +1,39 @@
 @echo off
-REM build_exe.bat — Sprint 6
-REM Chạy file này từ thư mục gốc repo (ngang hàng src\, config\).
-REM Tự kiểm tra + cài PyInstaller nếu thiếu, sau đó build ra dist\EzvizFloatCam.exe
+setlocal
+REM build_exe.bat - build dist\EzvizFloatCam.exe (PyInstaller, onefile, khong hien console)
+REM Chay tu thu muc goc repo (ngang hang src\, config\, assets\).
+REM
+REM Tu chon Python: neu co .venv\ (uv venv) thi dung no, neu khong dung "python" trong PATH.
+REM Neu co san file ezvizfloatcam.spec (file nay bi .gitignore, tuy may) thi build theo spec;
+REM neu khong co thi build bang tham so duoi day (khong can tao spec).
 
-echo [1/2] Kiem tra PyInstaller...
-python -m pip show pyinstaller >nul 2>&1
+set "PY=python"
+if exist ".venv\Scripts\python.exe" set "PY=.venv\Scripts\python.exe"
+
+echo [1/2] Kiem tra PyInstaller (dung: %PY%)...
+%PY% -m PyInstaller --version >nul 2>&1
 if errorlevel 1 (
-    echo     Chua co PyInstaller, dang cai dat tu requirements-dev.txt...
-    python -m pip install -r requirements-dev.txt
-    if errorlevel 1 (
-        echo [LOI] Cai PyInstaller that bai. Kiem tra lai Python/pip roi thu lai.
-        exit /b 1
-    )
-) else (
-    echo     Da co san.
+    echo [LOI] Chua co PyInstaller trong moi truong nay. Cai bang MOT trong hai cach:
+    echo     uv pip install -r requirements-dev.txt
+    echo     python -m pip install -r requirements-dev.txt
+    exit /b 1
 )
+echo     OK.
 
 echo.
-echo [2/2] Dang build EzvizFloatCam.exe (che do onefile)...
-REM LUU Y (vu icon): file ezvizfloatcam.spec khong nam trong repo (bi
-REM .gitignore loai vi *.spec la file build sinh/tuy may). Neu spec cua
-REM ban chua tro toi icon rieng, mo ezvizfloatcam.spec, tim doi tuong EXE(...)
-REM va them tham so:  icon='assets\app_icon.ico'
-REM (file .ico da co san trong assets\ tu Sprint 8 - vu icon)
-pyinstaller ezvizfloatcam.spec --noconfirm
+echo [2/2] Dang build EzvizFloatCam.exe (onefile)...
+if exist ezvizfloatcam.spec (
+    echo     Dung ezvizfloatcam.spec co san.
+    %PY% -m PyInstaller ezvizfloatcam.spec --noconfirm --clean
+) else (
+    %PY% -m PyInstaller --noconfirm --clean --onefile --windowed ^
+        --name EzvizFloatCam ^
+        --icon assets\app_icon.ico ^
+        --paths src ^
+        --add-data "config\default_config.json;config" ^
+        --add-data "assets\app_icon.ico;assets" ^
+        src\main.py
+)
 
 if errorlevel 1 (
     echo [LOI] Build that bai. Xem log ben tren de biet chi tiet.

@@ -1,108 +1,213 @@
 # EzvizFloatCam
 
-> Ứng dụng Windows hiển thị luồng RTSP từ camera Ezviz trong một cửa sổ nổi luôn nằm trên cùng màn hình.
+> Cửa sổ nổi hiển thị luồng RTSP từ camera Ezviz trên Windows — kèm ghi hình thủ công, tự động ghi khi có chuyển động và tự dọn bản ghi cũ.
 
-[![License](https://img.shields.io/github/license/tuananh511/ezviz-float-cam)](https://github.com/tuananh511/ezviz-float-cam/blob/main/LICENSE)
+[![Release](https://img.shields.io/github/v/release/tuananh511/ezviz-float-cam)](https://github.com/tuananh511/ezviz-float-cam/releases)
+[![License](https://img.shields.io/github/license/tuananh511/ezviz-float-cam)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 
-## Ứng dụng làm gì
+## Giới thiệu
 
-EzvizFloatCam kết nối tới camera Ezviz qua RTSP và hiển thị luồng video trong một cửa sổ nhỏ, không viền, bo góc, hiệu ứng kính mờ (Acrylic blur), luôn nổi trên các cửa sổ khác. Cửa sổ có thể kéo-thả và resize tự do, có icon khay hệ thống để ẩn/hiện, và hỗ trợ ghi hình khẩn cấp (luồng chất lượng cao) khi cần.
+EzvizFloatCam kết nối tới camera Ezviz qua RTSP và hiển thị video trong một cửa sổ nhỏ, không viền, bo góc, hiệu ứng kính mờ (Acrylic), luôn nằm trên cùng các cửa sổ khác — để vừa làm việc vừa để mắt tới camera. App nằm ở khay hệ thống, có thể tự khởi động cùng Windows.
 
-## Tính năng hiện có
+Ngoài xem trực tiếp, app còn có:
 
-- Kết nối và hiển thị stream RTSP từ camera Ezviz (`src/stream_widget.py`, `src/glass_window.py`)
-- Giao diện bo góc, hiệu ứng kính mờ, luôn nổi trên cùng, kéo-thả và resize góc dưới-phải
-- Icon khay hệ thống (`src/tray.py`) — ẩn/hiện cửa sổ, bật/tắt stream, mở Cài đặt, thoát
-- Cấu hình kết nối (IP/port/user/pass/loại luồng) qua giao diện Cài đặt, có nút "Kiểm tra kết nối" trước khi lưu (`src/settings_dialog.py`)
-- Tắt tiếng (mute) và ghi hình khẩn cấp ngay từ icon trên cửa sổ nổi
-- Tự kết nối lại khi mất tín hiệu (màn nhiễu "ĐANG KẾT NỐI LẠI" / "MẤT TÍN HIỆU"), tự khôi phục khi có tín hiệu trở lại
-- Hộp thoại "Giới thiệu" (About)
-- Tuỳ chọn khởi động cùng Windows qua registry HKCU, không cần quyền admin (`src/autostart.py`)
+- **Ghi hình thủ công** bằng nút REC ngay trên cửa sổ (luồng chất lượng cao, chia đoạn 5 phút).
+- **Tự động ghi khi có chuyển động**, hiện huy hiệu `AUTO REC` + viền cam trên hình, chạy độc lập với nút REC.
+- **Tự xoá bản ghi tự động cũ** khi thư mục ghi hình vượt ngưỡng dung lượng; ghi thủ công không bao giờ bị tự xoá.
+- **Khôi phục phiên ghi dở dang** sau khi app/máy bị tắt đột ngột.
 
-## Kiến trúc ghi hình khẩn cấp (Emergency Recording)
+## Tính năng
 
-Ghi hình khẩn cấp (`src/recorder.py`, gói `src/recording/`) được xây dựng thành các module domain tách biệt, mỗi module một trách nhiệm, phần lớn không phụ thuộc PySide6/VLC:
+**Xem trực tiếp**
 
-| Module | Vai trò |
+- Hiển thị stream RTSP, cửa sổ bo góc – kính mờ – luôn nổi, kéo-thả, resize bằng góc dưới-phải (giữ đúng tỉ lệ video).
+- Tự kết nối lại khi mất tín hiệu (màn nhiễu "ĐANG KẾT NỐI LẠI" / "MẤT TÍN HIỆU"), tự khôi phục khi có tín hiệu.
+- Tắt tiếng (mute) ngay từ icon trên cửa sổ.
+- Icon khay hệ thống: ẩn/hiện cửa sổ, bật/tắt stream, bật/tắt ghi tự động, mở Cài đặt, thoát.
+- Cài đặt có nút "Kiểm tra kết nối" trước khi lưu.
+- Tuỳ chọn khởi động cùng Windows (registry HKCU, không cần quyền admin).
+
+**Ghi hình**
+
+- Ghi thủ công (REC): luồng `main`, mỗi đoạn tối đa 5 phút, lưu `.mkv`.
+- Ghi tự động theo chuyển động: độ nhạy 3 mức, thời gian ghi thêm sau chuyển động cuối, có thể giới hạn vùng theo dõi (ROI).
+- Kiểm tra dung lượng ổ đĩa trước mỗi đoạn: dưới 1 GiB trống thì từ chối ghi (an toàn cho ổ hệ thống).
+- Tự xoá bản ghi tự động cũ nhất khi thư mục ghi hình vượt ngưỡng (mặc định 20 GB).
+- Mỗi lần ghi có thư mục tên theo ngày giờ và file `thong-tin.txt` tiếng Việt để xem nhanh.
+
+## Tải về và dùng ngay
+
+1. Cài [VLC media player](https://www.videolan.org/vlc/) bản desktop (app dùng `libvlc.dll` của VLC).
+2. Vào trang [Releases](https://github.com/tuananh511/ezviz-float-cam/releases), tải `EzvizFloatCam.exe` của bản mới nhất, để vào một thư mục bất kỳ rồi chạy. Không cần cài Python.
+3. Click phải icon ở khay hệ thống → **Cài đặt...** → nhập thông tin camera → **Kiểm tra kết nối** → **Lưu**.
+
+> Windows SmartScreen có thể cảnh báo vì file chưa được ký số. Chọn **More info → Run anyway** nếu bạn tin tưởng nguồn tải.
+
+### Chuẩn bị camera
+
+Camera cần bật RTSP: trong app Ezviz vào **Cài đặt thiết bị → Tính năng nâng cao → Địa chỉ Platform/RTSP**, bật RTSP và đặt mật khẩu cho RTSP. App dựng địa chỉ theo dạng:
+
+```
+rtsp://<user>:<mật khẩu>@<IP camera>:554/h264/<channel>/<sub|main>/av_stream
+```
+
+Camera và máy tính phải cùng mạng LAN. Nên đặt IP tĩnh (hoặc gán IP cố định trong router) cho camera để địa chỉ không đổi.
+
+## Sử dụng
+
+| Thao tác | Cách làm |
 |---|---|
-| `recording/session.py` | Domain model `RecordingSession`/`RecordingSegment` — state machine thuần (STARTING → RECORDING → STOPPING → STOPPED/FAILED/DISK_FULL), không phụ thuộc gì ngoài stdlib |
-| `src/recorder.py` (`EmergencyRecorder`) | Ghi hình theo từng đoạn (segment) nối tiếp, mỗi đoạn dài `SEGMENT_DURATION_S` = 300 giây, gộp lại thành một phiên logic; mỗi phiên có thư mục riêng `save_dir/emergency_<session_id>/` |
-| `recording/storage.py` (`StoragePolicy`) | Kiểm tra dung lượng đĩa trống trước khi tạo đoạn ghi mới — dưới `DEFAULT_MIN_FREE_BYTES` (1 GiB) thì từ chối (DISK_FULL), dưới `DEFAULT_LOW_FREE_BYTES` (2 GiB) thì vẫn cho phép nhưng có thể cảnh báo sớm. Không có khả năng xoá file |
-| `recording/metadata.py` (`RecordingMetadataStore`) | Lưu/đọc `session.json` trong thư mục mỗi phiên, ghi nguyên tử (`os.replace()`), validate chặt khi đọc |
-| `recording/recovery.py` (`recover_all`/`recover_session`) | Sau khi app khởi động lại từ một lần crash/mất điện, quét các thư mục phiên còn dở (STARTING/RECORDING/STOPPING) và đưa chúng về trạng thái kết thúc (FAILED) dựa trên bằng chứng file `.mkv` thực tế trên đĩa — không xoá file, không tự resume VLC/RTSP |
-| `recording/startup.py` (`run_startup_recovery`) | Điểm gọi duy nhất để chạy recovery lúc khởi động app, trước khi `EmergencyRecorder` có thể bắt đầu phiên mới (được `src/main.py` gọi) |
-| Thông báo khay hệ thống | `src/main.py` hiện balloon notification (qua `QSystemTrayIcon.showMessage`) báo số phiên đã khôi phục/không thể khôi phục hoàn toàn sau khi `run_startup_recovery()` chạy |
-| `recording/retention.py` (`RetentionCriteria`/`is_eligible_for_cleanup`/`find_eligible_sessions`) | Xác định (không xoá) phiên ghi hình nào đủ điều kiện dọn dẹp: trạng thái kết thúc (STOPPED/FAILED/DISK_FULL), `protected=False`, và cũ hơn mốc thời gian do caller truyền vào. Chưa được gọi từ bất kỳ luồng thực thi nào của app — chỉ là policy độc lập |
+| Di chuyển / đổi cỡ cửa sổ | Kéo cửa sổ / kéo góc dưới-phải |
+| Ghi hình thủ công | Bấm nút REC (đỏ) trên cửa sổ, bấm lần nữa để dừng. Góc trên-phải hiện `REC mm:ss` |
+| Tắt/bật tiếng | Icon loa trên cửa sổ |
+| Thông tin phiên bản | Icon `i` góc dưới-trái |
+| Bật/tắt ghi tự động | Menu khay hệ thống → **Tự động ghi khi có chuyển động** |
+| Đổi cấu hình | Menu khay → **Cài đặt...** |
+| Ẩn / hiện / thoát | Menu khay hệ thống |
 
-## Yêu cầu
+Chấm tròn góc trên-trái cho biết trạng thái kết nối. Khi đang ghi tự động, cửa sổ có **viền cam** và huy hiệu `AUTO REC mm:ss` ở góc dưới-trái; khi ghi tay thì `REC` đỏ ở góc trên-phải. Hai chế độ chạy được cùng lúc.
 
-- Windows 10/11 (mục tiêu chính; một phần code có fallback an toàn khi chạy trên Linux/macOS để dev/test, nhưng đây không phải môi trường được hỗ trợ chính thức)
-- [Python 3.10+](https://www.python.org/downloads/) nếu chạy từ mã nguồn
-- [VLC media player](https://www.videolan.org/vlc/) bản desktop đã cài — cần để có `libvlc.dll`
-- Camera Ezviz đã bật RTSP (trong app Ezviz: **Cài đặt thiết bị → Tính năng nâng cao → Địa chỉ Platform/RTSP**, bật RTSP và đặt mật khẩu riêng cho RTSP)
+## Tự động ghi khi có chuyển động
 
-Thư viện Python (`requirements.txt`): `PySide6>=6.6.0`, `python-vlc>=3.0.20000`.
+App lấy mẫu khung hình đang xem (~2 khung/giây), so với "nền" để phát hiện chuyển động. Khi có chuyển động ở vài lần lấy mẫu liên tiếp, app bắt đầu một phiên ghi riêng, và ghi thêm `post_roll_s` giây sau chuyển động cuối rồi dừng.
 
-## Cài đặt / thiết lập
+- **Độc lập với REC thủ công**: ghi tự động dùng một recorder riêng (phiên libVLC riêng, thư mục riêng đuôi `_TuDong`). Bật/tắt cái này không ảnh hưởng cái kia, file không bao giờ ghi đè nhau.
+- **Chống báo nhầm**: cần chuyển động ở nhiều lần lấy mẫu liên tiếp; việc camera tự đổi sáng toàn khung hoặc chuyển chế độ IR ngày/đêm không bị tính là chuyển động.
+- **Khi lỗi** (đầy ổ đĩa, mất luồng): huy hiệu đổi thành `AUTO REC LỖI` khoảng 15 giây, app nghỉ 60 giây rồi mới thử lại, không hiện hộp thoại làm phiền.
+- **Độ nhạy**: chỉnh trong Cài đặt (`Thấp` / `Vừa` / `Cao`). Nếu báo nhầm nhiều thì giảm độ nhạy hoặc khoanh vùng theo dõi; nếu bỏ sót thì tăng.
+- **Vùng theo dõi (ROI)**: đặt `roi` trong `config.json`, ví dụ chỉ theo dõi nửa phải khung hình quanh cửa: `"roi": [0.5, 0.0, 1.0, 1.0]` (tỉ lệ 0–1: trái, trên, phải, dưới).
 
-### Người dùng cuối — tải về dùng ngay
+## Thư mục ghi hình
 
-Không cần cài Python. Vào [Releases](https://github.com/tuananh511/ezviz-float-cam/releases), tải `EzvizFloatCam.exe` (bản mới nhất), lưu vào một thư mục bất kỳ rồi chạy trực tiếp.
+Mặc định lưu ở `%USERPROFILE%\Videos\EzvizFloatCam` (đổi trong Cài đặt). Mỗi lần ghi là một thư mục đặt tên theo ngày giờ (giờ địa phương) và loại ghi:
 
-Yêu cầu duy nhất: đã cài sẵn [VLC media player](https://www.videolan.org/vlc/) bản desktop (để có `libvlc.dll`).
+```
+Videos\EzvizFloatCam\
+├─ 2026-11-22_14-30-05_TuDong\      ← ghi TỰ ĐỘNG khi có chuyển động
+│   ├─ 14-30-05.mkv                 ← mỗi đoạn tối đa 5 phút, đặt tên theo giờ bắt đầu
+│   ├─ 14-35-05.mkv
+│   ├─ thong-tin.txt                ← ghi chú dễ đọc: bắt đầu/kết thúc, thời lượng, dung lượng, trạng thái
+│   └─ session.json                 ← dữ liệu máy đọc (khôi phục sau crash), không cần quan tâm
+└─ 2026-11-22_16-02-11_ThuCong\     ← ghi THỦ CÔNG (nút REC), được bảo vệ khỏi tự xoá
+```
 
-### Nhà phát triển — chạy từ mã nguồn
+Thư mục kiểu cũ vẫn được nhận ra: `emergency_<id>` coi là ghi thủ công (được bảo vệ), `emergency_motion_<id>` coi là ghi tự động.
 
-```bash
+## Tự xoá bản ghi cũ
+
+Trong **Cài đặt...** đặt "Dung lượng tối đa thư mục ghi hình" (mặc định 20 GB, bật sẵn). Mỗi 60 giây, sau mỗi lần ghi tự động kết thúc và khi khởi động app, app cộng dung lượng các thư mục ghi hình. Nếu vượt ngưỡng thì **xoá dần bản ghi TỰ ĐỘNG cũ nhất** cho tới khi còn khoảng 90% ngưỡng.
+
+- **Ghi thủ công không bao giờ bị tự xoá**, nhưng vẫn tính vào dung lượng. Nếu riêng ghi thủ công đã vượt ngưỡng, app chỉ cảnh báo ở console và không xoá thêm gì.
+- Không bao giờ xoá phiên đang ghi, phiên chưa kết thúc, hay thư mục không có `session.json` hợp lệ.
+- Thư mục/file lạ bạn để chung trong thư mục ghi hình không bị tính và không bị đụng tới. Chỉ xoá đúng file app tạo (`.mkv`, `session.json`, `thong-tin.txt`); nếu thư mục phiên còn file lạ thì thư mục được giữ lại.
+- **Xoá là xoá vĩnh viễn** (không qua Thùng rác). Muốn giữ một bản ghi tự động: chép/di chuyển nó ra ngoài thư mục ghi hình, hoặc đặt `"protected": true` trong `session.json` của nó.
+
+## Cấu hình (`config.json`)
+
+File nằm ở `%APPDATA%\EzvizFloatCam\config.json`, tự tạo ở lần chạy đầu từ `config/default_config.json`. Nên chỉnh qua **Cài đặt...**; sửa tay chỉ cần khi muốn dùng các khoá không có trên giao diện (đóng app trước khi sửa). Các mục `motion` và `retention` là tuỳ chọn — thiếu thì dùng giá trị mặc định.
+
+| Khoá | Mặc định | Ý nghĩa |
+|---|---|---|
+| `rtsp.ip` / `port` / `username` / `password` | `192.168.1.100` / `554` / `admin` / rỗng | Thông tin kết nối camera |
+| `rtsp.stream_type` | `sub` | Luồng để xem: `sub` (nhẹ) hoặc `main` (nét) |
+| `rtsp.channel` | `ch1` | Kênh camera |
+| `window.width` / `height` | `320` / `200` | Kích thước cửa sổ |
+| `window.pos_x` / `pos_y` | `null` | Vị trí (tự lưu khi di chuyển) |
+| `window.opacity` / `corner_radius` | `0.95` / `16` | Độ trong suốt / độ bo góc |
+| `autostart` | `false` | Khởi động cùng Windows |
+| `audio.muted` | `false` | Tắt tiếng |
+| `recording.save_dir` | rỗng | Thư mục lưu; rỗng = `Videos\EzvizFloatCam` |
+| `motion.enabled` | `true` | Bật/tắt ghi tự động |
+| `motion.sensitivity` | `medium` | `low` / `medium` / `high` |
+| `motion.post_roll_s` | `15` | Ghi thêm sau chuyển động cuối, 5–300 giây |
+| `motion.stream_type` | `main` | Luồng để ghi tự động: `main` (nét) hoặc `sub` (nhẹ hơn, dùng khi camera giới hạn số kết nối cùng lúc) |
+| `motion.roi` | `null` | `null` = cả khung; hoặc `[x0, y0, x1, y1]` tỉ lệ 0–1 |
+| `retention.enabled` | `true` | Bật/tắt tự xoá bản ghi tự động cũ |
+| `retention.max_gb` | `20` | Ngưỡng dung lượng thư mục ghi hình, 1–5000 GB |
+
+## Giới hạn đã biết
+
+- Ghi tự động bắt đầu **sau** khi phát hiện chuyển động, nên vài giây đầu của sự kiện có thể không có trong file (chưa có pre-roll).
+- Người đứng yên rất lâu sẽ bị "nền" hấp thụ dần, ghi tự động sẽ dừng sau `post_roll_s`.
+- Ban đêm / thiếu sáng thì nhiễu hình tăng, phát hiện chuyển động kém ổn định hơn.
+- Ghi tay và ghi tự động cùng chạy sẽ mở thêm một kết nối RTSP tới camera; nếu camera rớt kết nối thì đặt `motion.stream_type` là `sub`.
+- Xoá tự động là vĩnh viễn (xem mục trên).
+- Chỉ hỗ trợ chính thức Windows 10/11. Một phần code có fallback để dev/test trên Linux/macOS nhưng không phải môi trường được hỗ trợ.
+
+## Phát triển
+
+### Chạy từ mã nguồn
+
+Cần [Python 3.10+](https://www.python.org/downloads/) và VLC desktop. Với [uv](https://docs.astral.sh/uv/):
+
+```powershell
 git clone https://github.com/tuananh511/ezviz-float-cam.git
 cd ezviz-float-cam
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Để tự build `.exe`: cài `requirements-dev.txt` rồi chạy `build_exe.bat` (cần tự tạo `ezvizfloatcam.spec`, xem comment trong file này).
-
-## Chạy ứng dụng
-
-```bash
+uv venv
+uv pip install -r requirements-dev.txt
 cd src
-python main.py
+uv run main.py
 ```
 
-Lần chạy đầu tiên app tự tạo file cấu hình tại `%APPDATA%\EzvizFloatCam\config.json` (copy từ `config/default_config.json`). Cách khuyến nghị để cấu hình camera là qua giao diện: click phải icon khay hệ thống → **Cài đặt...** → nhập thông tin RTSP → **Kiểm tra kết nối** → **Lưu**. Cũng có thể sửa trực tiếp `config.json`, cấu trúc xem `config/default_config.json`.
+Hoặc dùng `venv` + `pip` như bình thường (`python -m venv venv`, `venv\Scripts\activate`, `pip install -r requirements-dev.txt`, `python src\main.py`).
 
-## Chạy test
+### Chạy test
 
-```bash
-pip install -r requirements-dev.txt
-pytest
+```powershell
+uv run pytest
 ```
 
-Bộ test dùng `pytest`, cấu hình trong `pytest.ini` (`testpaths = tests`). Các test liên quan tới VLC dùng fake/stub (xem `tests/conftest.py`), không cần cài camera thật hay VLC thật để chạy.
+Test dùng `pytest` (`pytest.ini`: `testpaths = tests`), phần VLC được giả lập bằng stub trong `tests/conftest.py`, nên không cần camera hay VLC thật để chạy.
 
-## Cấu trúc dự án
+### Build file .exe
+
+```powershell
+.\build_exe.bat
+```
+
+Script dùng `.venv\` nếu có, và build bằng PyInstaller (onefile, không hiện console) ra `dist\EzvizFloatCam.exe`. Nếu bạn có sẵn file `ezvizfloatcam.spec` (file này bị `.gitignore`) thì script build theo spec đó. Máy chạy file exe vẫn cần cài VLC.
+
+### Phát hành bản mới
+
+1. Sửa `APP_VERSION` trong `src/version.py`, chạy `uv run pytest`, commit.
+2. Tạo tag `vX.Y.Z` và push cả commit lẫn tag.
+3. `.\build_exe.bat`, chạy thử `dist\EzvizFloatCam.exe`.
+4. Trên GitHub: **Releases → Draft a new release**, chọn tag, đính kèm `EzvizFloatCam.exe`, dán ghi chú phát hành.
+
+## Kiến trúc
 
 ```
 src/
-  main.py                 # entry point
-  glass_window.py         # cửa sổ nổi, hiệu ứng kính mờ, icon hành động
-  stream_widget.py        # render video RTSP qua libVLC (memory callback)
-  tray.py                 # icon khay hệ thống
-  settings_dialog.py      # dialog cấu hình + kiểm tra kết nối
-  config_loader.py        # đọc/ghi config.json theo user
-  autostart.py            # khởi động cùng Windows (registry HKCU)
-  windows_blur.py         # hiệu ứng Acrylic blur (Windows API)
-  recorder.py             # EmergencyRecorder — ghi hình khẩn cấp theo đoạn
-  recording/              # domain model + policy cho ghi hình (xem bảng kiến trúc ở trên)
-tests/                    # pytest, ánh xạ theo từng module trên
+  main.py                 entry point; chạy khôi phục phiên dở dang lúc khởi động
+  glass_window.py         cửa sổ nổi, hiệu ứng kính mờ, icon REC/mute/about, huy hiệu AUTO REC
+  stream_widget.py        render video RTSP qua libVLC (memory callback); cấp khung hình cho phát hiện chuyển động
+  tray.py                 icon khay hệ thống và menu
+  settings_dialog.py      dialog cấu hình + kiểm tra kết nối
+  config_loader.py        đọc/ghi config.json theo user
+  autostart.py            khởi động cùng Windows (registry HKCU)
+  windows_blur.py         hiệu ứng Acrylic blur (Windows API)
+  recorder.py             EmergencyRecorder: ghi theo đoạn, dùng chung cho ghi tay (kind=manual) và ghi tự động (kind=auto)
+  motion.py               phát hiện chuyển động + chính sách bắt đầu/dừng ghi (stdlib thuần)
+  motion_controller.py    nối StreamWidget -> motion -> recorder tự động (Qt)
+  cleanup_controller.py   chạy dọn dẹp dung lượng định kỳ (Qt)
+  recording/              domain + policy ghi hình (stdlib thuần, không phụ thuộc PySide6/VLC)
+    session.py            RecordingSession/Segment, state machine STARTING→RECORDING→STOPPING→STOPPED/FAILED/DISK_FULL
+    storage.py            StoragePolicy: kiểm tra ổ đĩa trống trước mỗi đoạn
+    metadata.py           session.json: ghi nguyên tử (os.replace), validate chặt khi đọc
+    naming.py             quy ước tên thư mục/file ghi hình
+    summary.py            thong-tin.txt dễ đọc
+    recovery.py           đưa phiên dở dang (crash/mất điện) về trạng thái kết thúc, dựa trên file .mkv thực tế
+    startup.py            điểm gọi khôi phục lúc khởi động app
+    retention.py          policy: phiên nào đủ điều kiện bị dọn
+    cleanup.py            quét thư mục, lập kế hoạch và xoá bản ghi cũ vượt ngưỡng
+tests/                    pytest, ánh xạ theo từng module
 config/default_config.json
-build_exe.bat               # build .exe bằng PyInstaller
+assets/app_icon.ico
+build_exe.bat             build .exe bằng PyInstaller
 ```
 
-## Tình trạng phát triển
-
-Dự án đang được phát triển tích cực. Phần giao diện/kết nối RTSP cốt lõi đã ổn định qua nhiều sprint; phần kiến trúc ghi hình khẩn cấp (bảng ở trên) đang được xây dựng dần theo từng module độc lập và đã có bộ test đi kèm cho từng phần, nhưng một số phần (ví dụ `retention.py`) vẫn ở dạng policy độc lập, chưa được nối vào luồng chạy thực tế của app.
+Nguyên tắc thiết kế: các module trong `recording/` và `motion.py` là code thuần (chỉ dùng thư viện chuẩn, không PySide6/VLC) nên test được không cần giao diện; các controller Qt chỉ làm phần "dây nối".
 
 ## License
 

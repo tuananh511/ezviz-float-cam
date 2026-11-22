@@ -92,6 +92,7 @@ from typing import List, Optional, Union
 
 from .metadata import MetadataError, RecordingMetadataStore
 from .session import RecordingSession, RecordingStatus
+from .naming import is_session_dir_name
 
 __all__ = [
     "RecoveryOutcome",
@@ -104,8 +105,9 @@ __all__ = [
 ]
 
 
-# Directory naming convention used by EmergencyRecorder
-# (see recorder.py: `session_dir = base_dir / f"emergency_{session.session_id}"`).
+# Quy ước tên thư mục phiên: kiểu cũ `emergency_<id>/` (hằng số này giữ lại cho
+# tương thích) và kiểu mới dễ đọc `YYYY-MM-DD_HH-MM-SS_TuDong|ThuCong/` — xem
+# naming.is_session_dir_name(), nơi discover_session_dirs() dùng để nhận diện.
 SESSION_DIR_PREFIX = "emergency_"
 
 # Statuses that represent a session possibly interrupted mid-flight by an
@@ -230,7 +232,7 @@ def discover_session_dirs(base_dir: Union[str, os.PathLike]) -> List[Path]:
     for entry in base.iterdir():
         if not entry.is_dir():
             continue
-        if not entry.name.startswith(SESSION_DIR_PREFIX):
+        if not is_session_dir_name(entry.name):
             continue
         found.append(entry)
 

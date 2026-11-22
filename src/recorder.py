@@ -26,7 +26,8 @@ Một PHIÊN ghi hình khẩn cấp (RecordingSession, xem recording/session.py)
 giờ có thể gồm NHIỀU file .mkv vật lý (RecordingSegment) nối tiếp nhau,
 mỗi đoạn dài khoảng SEGMENT_DURATION_S giây, nhưng vẫn là MỘT phiên logic
 duy nhất (cùng session_id) từ góc nhìn của GlassWindow/is_recording().
-Mỗi phiên có thư mục riêng: save_dir/emergency_<session_id>/.
+Mỗi phiên có thư mục riêng: save_dir/<session_id>/ với session_id dạng
+"2026-11-22_14-30-05_TuDong" / "..._ThuCong" (xem recording/naming.py).
 
 Nguyên tắc chọn: khi hết thời gian một đoạn, DỪNG HẲN VLC media player của
 đoạn đó rồi mới TẠO MỚI một VLC instance/media_player cho đoạn tiếp theo —
@@ -121,6 +122,8 @@ import vlc
 
 from config_loader import build_rtsp_url
 from recording import (
+    KIND_AUTO,
+    KIND_MANUAL,
     InvalidTransitionError,
     RecordingMetadataStore,
     RecordingSegment,
@@ -128,7 +131,10 @@ from recording import (
     RecordingStatus,
     StorageDecision,
     StoragePolicy,
+    unique_session_name,
+    write_summary,
 )
+from recording.naming import make_segment_name
 
 _SUBDIR = "EzvizFloatCam"
 
@@ -154,8 +160,28 @@ class EmergencyRecorder(QObject):
     recording_stopped = Signal(str)   # đường dẫn file (đoạn) vừa dừng ghi
     recording_error = Signal(str)     # thông báo lỗi hiển thị cho người dùng
 
-    def __init__(self, parent=None):
+    def __init__(
+        self,
+        parent=None,
+        *,
+        kind: str = KIND_MANUAL,
+        stream_type: str = "main",
+    ):
+        """kind / stream_type cho phép chạy NHIỀU recorder độc lập cùng lúc
+        (ghi tay + ghi tự động theo chuyển động), mỗi cái có thư mục phiên
+        riêng (xem recording/naming.py) nên không bao giờ ghi đè file của
+        nhau.
+
+        kind = KIND_MANUAL (mặc định): bản ghi do người dùng bấm REC — được
+        BẢO VỆ (protected=True), không bao giờ bị tự xoá khi đầy dung lượng.
+        kind = KIND_AUTO: bản ghi tự động khi có chuyển động — protected=False,
+        bị tự xoá (cũ nhất trước) khi thư mục ghi hình vượt ngưỡng ở Cài đặt.
+        """
         super().__init__(parent)
+        if kind not in (KIND_MANUAL, KIND_AUTO):
+            raise ValueError(f"kind không hợp lệ: {kind!r}")
+        self.kind = kind
+        self.stream_type = stream_type
         self.instance = None
         self.media_player = None
         self._filepath: str | None = None
@@ -193,6 +219,11 @@ class EmergencyRecorder(QObject):
     def is_recording(self) -> bool:
         return self.media_player is not None
 
+    def active_session_dir(self) -> Path | None:
+        """Thư mục phiên đang ghi, hoặc None nếu không ghi — dùng để loại
+        phiên đang chạy khỏi việc dọn dẹp dung lượng."""
+        return self._session_dir if self.is_recording() else None
+
     def elapsed_seconds(self) -> int:
         if self._start_time is None:
             return 0
@@ -213,11 +244,17 @@ class EmergencyRecorder(QObject):
         # BẤT KỂ cửa sổ chính đang xem bằng luồng nào (thường là "sub").
         # URL này được build MỘT LẦN và dùng lại cho mọi đoạn trong phiên.
         main_cfg = dict(rtsp_cfg)
-        main_cfg["stream_type"] = "main"
+        main_cfg["stream_type"] = self.stream_type
         self._rtsp_url = build_rtsp_url(main_cfg)
 
-        session = RecordingSession()
-        session_dir = base_dir / f"emergency_{session.session_id}"
+        # Tên thư mục phiên cũng là session_id (xem recording/naming.py), vd
+        # "2026-11-22_14-30-05_TuDong" — mở session.json cũng thấy tên dễ hiểu.
+        session_name = unique_session_name(base_dir, self.kind, datetime.datetime.now())
+        session = RecordingSession(
+            session_id=session_name,
+            protected=(self.kind == KIND_MANUAL),
+        )
+        session_dir = base_dir / session_name
         try:
             session_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -278,7 +315,7 @@ class EmergencyRecorder(QObject):
         (cùng giây) hoặc trùng với một file đã tồn tại trên đĩa, thêm hậu
         tố "_NN" tăng dần — không bao giờ ghi đè lên một đoạn đã có.
         """
-        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        stamp = make_segment_name(datetime.datetime.now())[: -len(".mkv")]
         used_names = {
             Path(seg.path).name for seg in self._session.segments
         }
@@ -427,6 +464,14 @@ class EmergencyRecorder(QObject):
                 f"ghi hình đang có trên đĩa):\n{exc}"
             )
             return False
+        # File ghi chú dễ đọc cho người (thong-tin.txt) — phụ, không bao giờ
+        # raise/ảnh hưởng ghi hình (xem recording/summary.py).
+        title = (
+            "GHI HÌNH THỦ CÔNG (nút REC)"
+            if self.kind == KIND_MANUAL
+            else "GHI HÌNH TỰ ĐỘNG (khi có chuyển động)"
+        )
+        write_summary(self._session_dir, self._session, title)
         return True
 
     def _transition_session_safely(self, new_status: RecordingStatus, **kwargs):

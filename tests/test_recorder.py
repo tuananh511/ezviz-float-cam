@@ -90,12 +90,13 @@ def test_start_creates_target_dir_and_transitions_to_recording(tmp_path, wired_v
     assert rec.is_recording() is True
     assert started_paths == [rec._filepath]
     # CHANGED (Task 3): segmented recording gives each session its own
-    # save_dir/emergency_<session_id>/ subdirectory instead of writing the
+    # save_dir/<session_id>/ subdirectory instead of writing the
     # file directly into save_dir — the segment's parent is now the
     # session directory, which itself lives inside save_dir.
     session_dir = Path(rec._filepath).parent
     assert session_dir.parent == save_dir
-    assert session_dir.name == f"emergency_{rec._session.session_id}"
+    assert session_dir.name == rec._session.session_id
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_ThuCong", session_dir.name)
 
 
 def test_start_falls_back_to_default_recording_dir_when_save_dir_blank(
@@ -303,13 +304,13 @@ def test_recording_filename_format(tmp_path, wired_vlc):
     rec = EmergencyRecorder()
     rec.start(RTSP_CFG, save_dir=str(tmp_path))
 
-    # CHANGED (Task 3): the "emergency_" prefix + session id now live in
-    # the SESSION DIRECTORY name (emergency_<session_id>/), matching the
+    # CHANGED (Task 3): the session id (with date, time and kind) now lives in
+    # the SESSION DIRECTORY name (<session_id>/, e.g. 2026-11-22_14-30-05_ThuCong), matching the
     # task spec's example layout, so the per-segment filename itself is
-    # just the sortable timestamp (e.g. 20260821_173000.mkv).
+    # just the sortable timestamp (e.g. 17-30-00.mkv).
     segment_path = Path(rec._filepath)
-    assert re.fullmatch(r"\d{8}_\d{6}(_\d{2})?\.mkv", segment_path.name), segment_path.name
-    assert segment_path.parent.name == f"emergency_{rec._session.session_id}"
+    assert re.fullmatch(r"\d{2}-\d{2}-\d{2}(_\d{2})?\.mkv", segment_path.name), segment_path.name
+    assert segment_path.parent.name == rec._session.session_id
 
 
 # ---------------------------------------------------------------------
@@ -415,7 +416,7 @@ def test_start_creates_session_subdirectory(tmp_path, wired_vlc):
     rec = EmergencyRecorder()
     rec.start(RTSP_CFG, save_dir=str(tmp_path))
 
-    session_dir = tmp_path / f"emergency_{rec._session.session_id}"
+    session_dir = tmp_path / rec._session.session_id
     assert session_dir.exists() and session_dir.is_dir()
     assert Path(rec._filepath).parent == session_dir
 

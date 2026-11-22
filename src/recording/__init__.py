@@ -80,6 +80,22 @@ from .storage import (
     StorageDecision,
     StoragePolicy,
 )
+from .naming import (
+    KIND_AUTO,
+    KIND_MANUAL,
+    is_session_dir_name,
+    make_segment_name,
+    make_session_name,
+    unique_session_name,
+)
+from .summary import SUMMARY_FILENAME, write_summary
+from .cleanup import (
+    CleanupReport,
+    get_retention_config,
+    run_cleanup,
+    scan_sessions,
+    summarize_usage,
+)
 from .retention import (
     RetentionCriteria,
     find_eligible_sessions,
@@ -113,4 +129,17 @@ __all__ = [
     "RetentionCriteria",
     "find_eligible_sessions",
     "is_eligible_for_cleanup",
+    "KIND_AUTO",
+    "KIND_MANUAL",
+    "is_session_dir_name",
+    "make_segment_name",
+    "make_session_name",
+    "unique_session_name",
+    "SUMMARY_FILENAME",
+    "write_summary",
+    "CleanupReport",
+    "get_retention_config",
+    "run_cleanup",
+    "scan_sessions",
+    "summarize_usage",
 ]

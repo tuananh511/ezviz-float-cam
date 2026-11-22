@@ -21,5 +21,16 @@
   },
   "recording": {
     "save_dir": ""
+  },
+  "motion": {
+    "enabled": true,
+    "sensitivity": "medium",
+    "post_roll_s": 15,
+    "stream_type": "main",
+    "roi": null
+  },
+  "retention": {
+    "enabled": true,
+    "max_gb": 20
   }
 }

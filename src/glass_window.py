@@ -14,6 +14,7 @@ StreamWidget.native_size_ready) khi resize — để không bao giờ phải hi�
 """
 
 import sys
+import time
 
 from PySide6.QtWidgets import (
     QWidget, QMessageBox, QDialog, QVBoxLayout, QLabel, QPushButton,
@@ -21,10 +22,15 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QPoint, QRect, QTimer
 from PySide6.QtGui import (
     QPainter, QColor, QPen, QCursor, QPainterPath, QRegion, QPolygon, QFont,
+    QFontMetrics,
 )
 
 from stream_widget import StreamWidget
 from recorder import EmergencyRecorder
+from recording import KIND_AUTO
+from motion import get_motion_config
+from motion_controller import MotionRecordingController
+from cleanup_controller import RecordingCleanupController
 from config_loader import save_config
 from windows_blur import enable_acrylic_blur
 from version import APP_NAME, APP_VERSION, GITHUB_URL, LICENSE_NAME
@@ -76,6 +82,7 @@ class _Overlay(QWidget):
         self.glass_window.paint_resize_grip(painter)
         self.glass_window.paint_action_icons(painter)
         self.glass_window.paint_about_icon(painter)
+        self.glass_window.paint_auto_record(painter)
 
     def mousePressEvent(self, event):
         self.glass_window.handle_mouse_press(event)
@@ -131,6 +138,40 @@ class GlassWindow(QWidget):
         self.recorder.recording_stopped.connect(self._on_recording_stopped)
         self.recorder.recording_error.connect(self._on_recording_error)
 
+        # Ghi hình TỰ ĐỘNG khi có chuyển động — recorder RIÊNG, độc lập hoàn
+        # toàn với self.recorder (nút REC thủ công): hai bên có phiên libVLC
+        # và thư mục phiên riêng (..._TuDong vs ..._ThuCong)
+        # nên bật/tắt cái này không ảnh hưởng cái kia.
+        motion_cfg = get_motion_config(config)
+        self.auto_recorder = EmergencyRecorder(
+            self,
+            kind=KIND_AUTO,
+            stream_type=motion_cfg["stream_type"],
+        )
+        self.auto_recorder.recording_started.connect(lambda _p: self.overlay.update())
+        self.auto_recorder.recording_stopped.connect(lambda _p: self.overlay.update())
+        self.auto_recorder.recording_error.connect(self._on_auto_recording_error)
+        self.motion = MotionRecordingController(
+            self.stream_widget, self.auto_recorder, lambda: self.config, self,
+        )
+        self.motion.state_changed.connect(self.overlay.update)
+        self.motion.start()
+
+        # Tự xoá bản ghi TỰ ĐỘNG cũ khi thư mục ghi hình vượt ngưỡng (Cài đặt).
+        # Phiên đang ghi (cả tay lẫn tự động) luôn được loại khỏi việc xoá.
+        self.cleanup = RecordingCleanupController(
+            lambda: self.config,
+            lambda: [
+                d for d in (
+                    self.recorder.active_session_dir(),
+                    self.auto_recorder.active_session_dir(),
+                ) if d is not None
+            ],
+            self,
+        )
+        self.auto_recorder.recording_stopped.connect(lambda _p: self.cleanup.run_now())
+        self.cleanup.start()
+
         self._drag_pos: QPoint | None = None
         self._resizing = False
         self._resize_start_geo: QRect | None = None
@@ -146,7 +187,7 @@ class GlassWindow(QWidget):
         # cập nhật chấm trạng thái mỗi giây (dot xanh = đang phát, đỏ = chưa)
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.overlay.update)
-        self.status_timer.start(1000)
+        self.status_timer.start(500)  # 500ms để huy hiệu AUTO REC nhấp nháy mượt
 
     # ---------- vị trí ban đầu ----------
 
@@ -261,6 +302,91 @@ class GlassWindow(QWidget):
                 QPoint(x0 + GRIP_SIZE - 4, y0 + GRIP_SIZE - 4 - offset),
                 2, 2,
             )
+
+    # ---------- huy hiệu ghi hình TỰ ĐỘNG theo chuyển động ----------
+
+    def paint_auto_record(self, painter: QPainter):
+        """Hiển thị trên hình khi đang ghi tự động: viền cam quanh khung +
+        huy hiệu "AUTO REC mm:ss" (chấm nhấp nháy) góc dưới-trái, cạnh icon
+        "i". Màu cam để phân biệt với REC thủ công (đỏ, góc trên-phải). Nếu
+        ghi tự động vừa gặp lỗi (đầy đĩa...), hiện "AUTO REC LỖI" ~15 giây."""
+        recording = self.motion.is_recording()
+        error_active = (
+            not recording
+            and self.motion.last_error is not None
+            and time.monotonic() - self.motion.last_error_at < 15.0
+        )
+        if not recording and not error_active:
+            return
+
+        orange = QColor(255, 140, 0)
+        if recording:
+            path = QPainterPath()
+            path.addRoundedRect(
+                1, 1, self.width() - 2, self.height() - 2,
+                self.corner_radius, self.corner_radius,
+            )
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(QColor(255, 140, 0, 200), 2))
+            painter.drawPath(path)
+
+        blink_on = int(time.time() * 2) % 2 == 0
+        if recording:
+            mm, ss = divmod(self.motion.elapsed_seconds(), 60)
+            text = f"AUTO REC {mm:02d}:{ss:02d}"
+            dot_color = orange if blink_on else QColor(255, 140, 0, 80)
+        else:
+            text = "AUTO REC LỖI"
+            dot_color = QColor(220, 70, 70)
+
+        font = QFont(painter.font())
+        font.setBold(True)
+        font.setPointSize(8)
+        painter.setFont(font)
+        text_w = QFontMetrics(font).horizontalAdvance(text)
+
+        height = 18
+        x = ABOUT_ICON_MARGIN + ABOUT_ICON_SIZE + 6
+        y = self.height() - ABOUT_ICON_MARGIN - height
+        pill = QRect(x, y, 14 + text_w + 10, height)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 140))
+        painter.drawRoundedRect(pill, height / 2, height / 2)
+
+        painter.setBrush(dot_color)
+        painter.drawEllipse(QPoint(pill.left() + 9, pill.center().y()), 4, 4)
+
+        painter.setPen(QColor(255, 255, 255, 235))
+        painter.drawText(
+            QRect(pill.left() + 17, pill.top(), pill.width() - 17, pill.height()),
+            Qt.AlignLeft | Qt.AlignVCenter, text,
+        )
+
+    def _on_auto_recording_error(self, message: str):
+        # KHÔNG hiện hộp thoại modal như ghi tay: ghi tự động chạy ngầm, một
+        # hộp thoại bật lên giữa chừng sẽ rất phiền. Lỗi đã được in ra console
+        # và huy hiệu "AUTO REC LỖI" báo trên hình.
+        print(f"[WARN] Ghi tự động: {message}")
+        self.motion.last_error = message.splitlines()[0] if message else "lỗi"
+        self.motion.last_error_at = time.monotonic()
+        self.overlay.update()
+
+    def set_motion_enabled(self, enabled: bool):
+        """Bật/tắt ghi tự động (từ menu khay), lưu vào config."""
+        motion_cfg = self.config.setdefault("motion", {})
+        motion_cfg["enabled"] = bool(enabled)
+        save_config(self.config)
+        self.apply_motion_config()
+
+    def apply_retention_config(self):
+        """Áp dụng ngưỡng dung lượng mới (sau khi lưu Cài đặt) — dọn ngay."""
+        self.cleanup.run_now()
+
+    def apply_motion_config(self):
+        """Áp dụng lại cấu hình chuyển động hiện có trong self.config."""
+        self.motion.apply_config()
+        self.overlay.update()
 
     # ---------- icon hành động: ghi hình khẩn cấp + mute (Sprint 5.5) ----------
 
@@ -519,6 +645,9 @@ class GlassWindow(QWidget):
             event.ignore()
             self.hide()
             return
+        # Dừng ghi tự động (nếu đang chạy) trước, rồi mới tới ghi tay.
+        self.motion.shutdown()
+        self.cleanup.shutdown()
         if self.recorder.is_recording():
             # Dừng ghi hình đúng cách trước khi thoát hẳn. File .mkv chống
             # chịu tốt hơn .mp4 khi bị ngắt đột ngột (xem giải thích trong

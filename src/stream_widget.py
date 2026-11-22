@@ -201,6 +201,16 @@ class StreamWidget(QFrame):
         cần hiện thêm ở tray."""
         return self._state or "stopped"
 
+    def latest_frame(self) -> "QImage | None":
+        """Khung hình mới nhất đang hiển thị, hoặc None nếu chưa có / đang
+        mất tín hiệu (khi đó _qimage đã bị xoá, xem _set_state()). Dùng cho
+        phát hiện chuyển động — chỉ ĐỌC, không sửa ảnh trả về. _qimage luôn
+        được thay bằng một bản copy mới mỗi khung (không bao giờ sửa tại
+        chỗ) nên đọc từ thread chính là an toàn."""
+        if self._state != "connected":
+            return None
+        return self._qimage
+
     def set_muted(self, muted: bool):
         """Bật/tắt tiếng — chỉ ảnh hưởng audio output, không đụng gì tới
         pipeline video (video_set_callbacks) ở trên."""

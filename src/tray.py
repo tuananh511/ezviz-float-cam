@@ -18,6 +18,7 @@ from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction
 from PySide6.QtCore import Qt, QTimer
 
 from config_loader import build_rtsp_url, save_config
+from motion import get_motion_config
 from settings_dialog import SettingsDialog
 import autostart
 
@@ -59,6 +60,13 @@ class TrayIcon(QSystemTrayIcon):
         self.action_toggle_stream = QAction("Tắt stream", self.menu)
         self.action_toggle_stream.triggered.connect(self._toggle_stream)
         self.menu.addAction(self.action_toggle_stream)
+
+        # Ghi tự động khi có chuyển động (bật/tắt nhanh, lưu vào config).
+        self.action_motion = QAction("Tự động ghi khi có chuyển động", self.menu)
+        self.action_motion.setCheckable(True)
+        self.action_motion.setChecked(get_motion_config(self.window.config)["enabled"])
+        self.action_motion.toggled.connect(self._toggle_motion)
+        self.menu.addAction(self.action_motion)
 
         self.menu.addSeparator()
 
@@ -103,6 +111,9 @@ class TrayIcon(QSystemTrayIcon):
             self.window.stream_widget.start()
         self._refresh_status()
 
+    def _toggle_motion(self, checked: bool):
+        self.window.set_motion_enabled(checked)
+
     def _open_settings(self):
         dialog = SettingsDialog(self.window.config, parent=self.window)
         if dialog.exec() == QDialog.Accepted:
@@ -122,9 +133,20 @@ class TrayIcon(QSystemTrayIcon):
             # Sprint 5.5: thư mục lưu ghi hình khẩn cấp.
             self.window.config["recording"] = dialog.get_recording_config()
 
+            # Ngưỡng dung lượng + tự xoá bản ghi tự động cũ.
+            self.window.config["retention"] = dialog.get_retention_settings()
+
+            # Ghi tự động theo chuyển động: cập nhật ĐÚNG các khoá dialog
+            # quản lý, giữ nguyên khoá khác trong config (vd roi, stream_type).
+            self.window.config.setdefault("motion", {}).update(
+                dialog.get_motion_config()
+            )
+
             save_config(self.window.config)
             new_url = build_rtsp_url(new_rtsp)
             self.window.apply_new_rtsp(new_url)
+            self.window.apply_motion_config()
+            self.window.apply_retention_config()
             self._refresh_status()
 
     def _quit(self):
@@ -147,3 +169,8 @@ class TrayIcon(QSystemTrayIcon):
         self.action_toggle_show.setText(
             "Ẩn cửa sổ" if self.window.isVisible() else "Hiện cửa sổ"
         )
+        motion_enabled = get_motion_config(self.window.config)["enabled"]
+        if self.action_motion.isChecked() != motion_enabled:
+            self.action_motion.blockSignals(True)
+            self.action_motion.setChecked(motion_enabled)
+            self.action_motion.blockSignals(False)
