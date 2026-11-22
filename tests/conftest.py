@@ -13,8 +13,8 @@ Responsibilities:
   installation that is not available (and, per the audit task, must not
   be required) in the test environment. Tests configure the fake module's
   behavior per-test via the `fake_vlc` / `wired_vlc` fixtures below.
-- Provide a QCoreApplication so PySide6 QObject/QTimer/Signal machinery
-  used by EmergencyRecorder behaves normally outside the full app.
+- Provide a QApplication (offscreen when headless) so PySide6 QObject/QTimer/
+  Signal machinery and widgets behave normally outside the full app.
 
 No real VLC binary and no real RTSP camera are used anywhere in this
 test suite.
@@ -68,20 +68,31 @@ _install_fake_vlc_module()
 
 @pytest.fixture(scope="session")
 def qapp():
-    """A single QCoreApplication for the whole test session. EmergencyRecorder
-    only uses QtCore (QObject/QTimer/Signal) — QCoreApplication is enough,
-    no QPA platform plugin (e.g. 'offscreen') is required."""
-    from PySide6.QtCore import QCoreApplication
+    """A single QApplication for the whole test session. QApplication is a
+    superset of QCoreApplication, so QObject/QTimer/Signal code (recorder,
+    controllers) behaves exactly as before, and widget tests (ui_widgets,
+    SettingsDialog, GlassWindow) can run too. On machines without a display
+    (Linux CI, containers) the 'offscreen' Qt platform is used automatically."""
+    import os
 
-    app = QCoreApplication.instance()
+    if (
+        sys.platform != "win32"
+        and not os.environ.get("DISPLAY")
+        and not os.environ.get("WAYLAND_DISPLAY")
+    ):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
     if app is None:
-        app = QCoreApplication(["pytest"])
+        app = QApplication(["pytest"])
     return app
 
 
 @pytest.fixture(autouse=True)
 def _qapp_available(qapp):
-    """Every test automatically gets a live QCoreApplication instance."""
+    """Every test automatically gets a live QApplication instance."""
     yield
 
 

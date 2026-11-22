@@ -14,14 +14,14 @@ dict rtsp mới qua get_rtsp_config() khi exec() == Accepted. Việc lưu config
 import vlc
 
 from PySide6.QtWidgets import (
-    QDialog, QFormLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QSpinBox,
-    QComboBox, QCheckBox, QPushButton, QLabel, QDialogButtonBox, QFileDialog,
+    QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QSpinBox, QPushButton,
+    QLabel, QFileDialog, QFrame, QStackedWidget, QProgressBar, QWidget,
 )
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QDir, QTimer, Qt
 
 from config_loader import build_rtsp_url
 from motion import (
-    POST_ROLL_MAX_S, POST_ROLL_MIN_S, SENSITIVITY_PRESETS, get_motion_config,
+    POST_ROLL_MAX_S, POST_ROLL_MIN_S, get_motion_config,
 )
 from recorder import default_recording_dir
 from recording import resolve_recording_base_dir
@@ -29,175 +29,359 @@ from recording.cleanup import (
     MAX_MAX_GB, MIN_MAX_GB, get_retention_config, summarize_usage,
 )
 from recording.summary import format_size
+from ui_widgets import SegmentedControl, ToggleSwitch
 import autostart
 
 _TEST_TIMEOUT_MS = 6000
 _TEST_POLL_MS = 300
 
+# Giao diện tối kiểu Apple: nền #1c1c1e, thẻ #2c2c2e bo góc, đường kẻ #3a3a3c,
+# xanh nhấn #0a84ff. Chỉ dùng stylesheet Qt — không thêm thư viện nào.
 _STYLE = """
-QDialog { background-color: #18181c; color: #eaeaea; }
-QLabel { color: #eaeaea; }
-QLineEdit, QSpinBox, QComboBox {
-    background-color: #232328; color: #eaeaea; border: 1px solid #3a3a40;
-    border-radius: 6px; padding: 4px 6px;
+QDialog { background-color: #1c1c1e; }
+QLabel { color: #f5f5f7; font-size: 13px; }
+QLabel#rowHint, QLabel#note, QLabel#section { color: #8e8e93; font-size: 11px; }
+QLabel#section { font-weight: 600; padding: 4px 4px 0 4px; }
+QFrame#card { background-color: #2c2c2e; border-radius: 10px; }
+QFrame#sep { background-color: #3a3a3c; border: none; min-height: 1px; max-height: 1px; }
+QLineEdit, QSpinBox {
+    background-color: #1c1c1e; color: #f5f5f7; border: 1px solid transparent;
+    border-radius: 6px; padding: 5px 8px; selection-background-color: #0a84ff;
 }
+QLineEdit:focus, QSpinBox:focus { border: 1px solid #0a84ff; }
+QLineEdit:read-only { color: #c7c7cc; }
 QPushButton {
-    background-color: #2c2c33; color: #eaeaea; border: 1px solid #3a3a40;
-    border-radius: 6px; padding: 5px 14px;
+    background-color: #3a3a3c; color: #f5f5f7; border: none;
+    border-radius: 6px; padding: 6px 14px;
 }
-QPushButton:hover { background-color: #35353d; }
-QPushButton:disabled { color: #777; }
-QCheckBox { color: #eaeaea; }
+QPushButton:hover { background-color: #48484a; }
+QPushButton:pressed { background-color: #545458; }
+QPushButton:disabled { color: #6c6c70; }
+QPushButton:checked { background-color: #0a84ff; }
+QPushButton#primary { background-color: #0a84ff; color: #ffffff; font-weight: 600; padding: 6px 22px; }
+QPushButton#primary:hover { background-color: #3b9bff; }
+QPushButton#primary:pressed { background-color: #0067d6; }
+QProgressBar { background-color: #1c1c1e; border: none; border-radius: 3px; min-height: 6px; max-height: 6px; }
+QProgressBar::chunk { background-color: #0a84ff; border-radius: 3px; }
+QProgressBar[level="warn"]::chunk { background-color: #ff9f0a; }
+QProgressBar[level="full"]::chunk { background-color: #ff453a; }
 """
+
+_CONTROL_W = 230   # bề rộng ô nhập bên phải mỗi hàng cài đặt
+
+
+def _make_card(rows) -> QFrame:
+    """Thẻ bo góc chứa nhiều hàng, ngăn cách bằng đường kẻ mảnh."""
+    card = QFrame()
+    card.setObjectName("card")
+    lay = QVBoxLayout(card)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(0)
+    for i, row in enumerate(rows):
+        if i:
+            sep = QFrame()
+            sep.setObjectName("sep")
+            sep.setFixedHeight(1)
+            wrap = QHBoxLayout()
+            wrap.setContentsMargins(14, 0, 0, 0)
+            wrap.addWidget(sep)
+            lay.addLayout(wrap)
+        lay.addWidget(row)
+    return card
+
+
+def _make_row(title: str, hint: str, control: QWidget | None) -> QWidget:
+    """Một hàng cài đặt: tiêu đề (+ chú thích nhỏ) bên trái, điều khiển bên phải."""
+    row = QWidget()
+    lay = QHBoxLayout(row)
+    lay.setContentsMargins(14, 10, 14, 10)
+    lay.setSpacing(12)
+
+    text = QVBoxLayout()
+    text.setSpacing(2)
+    title_label = QLabel(title)
+    title_label.setWordWrap(True)
+    text.addWidget(title_label)
+    if hint:
+        hint_label = QLabel(hint)
+        hint_label.setObjectName("rowHint")
+        hint_label.setWordWrap(True)
+        text.addWidget(hint_label)
+    lay.addLayout(text, 1)
+
+    if control is not None:
+        lay.addWidget(control, 0, Qt.AlignVCenter | Qt.AlignRight)
+    return row
+
+
+def _section(text: str) -> QLabel:
+    label = QLabel(text.upper())
+    label.setObjectName("section")
+    return label
 
 
 class SettingsDialog(QDialog):
     def __init__(self, config: dict, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Cài đặt kết nối — EzvizFloatCam")
+        self.setWindowTitle("Cài đặt — EzvizFloatCam")
         self.setModal(True)
         self.setStyleSheet(_STYLE)
-        self.setMinimumWidth(380)
+        self.setMinimumWidth(520)
 
         rtsp_cfg = config.get("rtsp", {})
+        self._config = config
 
+        # ---------- trang 1: Kết nối ----------
         self.ip_edit = QLineEdit(rtsp_cfg.get("ip", ""))
         self.ip_edit.setPlaceholderText("vd: 192.168.1.100")
+        self.ip_edit.setAlignment(Qt.AlignRight)
+        self.ip_edit.setFixedWidth(_CONTROL_W)
 
         self.port_spin = QSpinBox()
         self.port_spin.setRange(1, 65535)
         self.port_spin.setValue(rtsp_cfg.get("port", 554))
+        self.port_spin.setAlignment(Qt.AlignRight)
+        self.port_spin.setFixedWidth(110)
 
         self.user_edit = QLineEdit(rtsp_cfg.get("username", ""))
         self.user_edit.setPlaceholderText("vd: admin")
+        self.user_edit.setAlignment(Qt.AlignRight)
+        self.user_edit.setFixedWidth(_CONTROL_W)
 
         self.pass_edit = QLineEdit(rtsp_cfg.get("password", ""))
         self.pass_edit.setEchoMode(QLineEdit.Password)
+        self.pass_edit.setAlignment(Qt.AlignRight)
 
-        self.show_pass_check = QCheckBox("Hiện mật khẩu")
+        # Nút "Hiện/Ẩn" nằm cạnh ô mật khẩu (giữ tên thuộc tính cũ, vẫn là
+        # nút bấm có toggled/isChecked như QCheckBox).
+        self.show_pass_check = QPushButton("Hiện")
+        self.show_pass_check.setCheckable(True)
+        self.show_pass_check.setCursor(Qt.PointingHandCursor)
+        self.show_pass_check.setFixedWidth(52)
         self.show_pass_check.toggled.connect(self._toggle_password_visibility)
 
-        self.stream_combo = QComboBox()
-        self.stream_combo.addItem("Nhẹ — sub stream (khuyến nghị)", "sub")
-        self.stream_combo.addItem("Nét cao — main stream (nặng hơn)", "main")
-        current_stream = rtsp_cfg.get("stream_type", "sub")
-        idx = self.stream_combo.findData(current_stream)
-        self.stream_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        pass_box = QWidget()
+        pass_lay = QHBoxLayout(pass_box)
+        pass_lay.setContentsMargins(0, 0, 0, 0)
+        pass_lay.setSpacing(6)
+        self.pass_edit.setFixedWidth(_CONTROL_W - 58)
+        pass_lay.addWidget(self.pass_edit)
+        pass_lay.addWidget(self.show_pass_check)
+
+        self.stream_combo = SegmentedControl(
+            [("Nhẹ · sub", "sub"), ("Nét · main", "main")], track="#1c1c1e",
+        )
+        self.stream_combo.setCurrentData(rtsp_cfg.get("stream_type", "sub"))
 
         self.channel_edit = QLineEdit(rtsp_cfg.get("channel", "ch1"))
-        self.channel_edit.setPlaceholderText("vd: ch1 (thường không cần đổi)")
+        self.channel_edit.setPlaceholderText("vd: ch1")
+        self.channel_edit.setAlignment(Qt.AlignRight)
+        self.channel_edit.setFixedWidth(110)
 
         # Sprint 5: đọc trạng thái THẬT từ registry (không đọc từ
         # config.json) — tránh lệch nếu người dùng tự xoá key bằng tay
         # (vd qua Task Manager > Startup) ngoài ý muốn của app.
-        self.autostart_check = QCheckBox("Khởi động cùng Windows")
+        self.autostart_check = ToggleSwitch()
         self.autostart_check.setChecked(autostart.is_autostart_enabled())
 
-        # Sprint 5.5: thư mục lưu video khi bấm nút "Ghi hình khẩn cấp" trên
-        # cửa sổ nổi. Để trống = lúc bấm ghi sẽ tự dùng thư mục gợi ý mặc
-        # định (%USERPROFILE%\Videos\EzvizFloatCam) — ô này chỉ HIỂN THỊ gợi
-        # ý qua placeholder, KHÔNG tự ghi giá trị đó vào config nếu người
-        # dùng chưa bấm "Dùng thư mục gợi ý" hoặc tự chọn qua "Duyệt...".
-        recording_cfg = config.get("recording", {})
-        self.record_dir_edit = QLineEdit(recording_cfg.get("save_dir", ""))
-        self.record_dir_edit.setPlaceholderText(str(default_recording_dir()))
-        self.record_dir_edit.setReadOnly(True)
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        self.status_label.setMinimumHeight(18)
 
-        self.record_browse_btn = QPushButton("Duyệt...")
+        self.test_btn = QPushButton("Kiểm tra kết nối")
+        self.test_btn.clicked.connect(self._start_test)
+
+        test_row = QHBoxLayout()
+        test_row.setContentsMargins(4, 0, 4, 0)
+        test_row.addWidget(self.test_btn)
+        test_row.addWidget(self.status_label, 1)
+
+        page_connection = QWidget()
+        pc = QVBoxLayout(page_connection)
+        pc.setContentsMargins(0, 0, 0, 0)
+        pc.setSpacing(6)
+        pc.addWidget(_section("Camera"))
+        pc.addWidget(_make_card([
+            _make_row("Địa chỉ IP", "", self.ip_edit),
+            _make_row("Cổng (port)", "", self.port_spin),
+            _make_row("Tên đăng nhập", "", self.user_edit),
+            _make_row("Mật khẩu", "", pass_box),
+        ]))
+        pc.addLayout(test_row)
+        pc.addWidget(_section("Xem trực tiếp"))
+        pc.addWidget(_make_card([
+            _make_row("Chất lượng luồng xem", "Nhẹ (sub) được khuyến nghị — ít tốn CPU",
+                      self.stream_combo),
+            _make_row("Kênh (nâng cao)", "Thường không cần đổi", self.channel_edit),
+            _make_row("Khởi động cùng Windows", "", self.autostart_check),
+        ]))
+        pc.addStretch(1)
+
+        # ---------- trang 2: Ghi hình ----------
+        # Sprint 5.5: thư mục lưu video. Để trống = lúc bấm ghi sẽ tự dùng thư
+        # mục gợi ý mặc định (%USERPROFILE%\Videos\EzvizFloatCam) — ô này chỉ
+        # HIỂN THỊ gợi ý qua placeholder, KHÔNG tự ghi giá trị đó vào config
+        # nếu người dùng chưa bấm "Mặc định" hoặc tự chọn qua "Chọn...".
+        recording_cfg = config.get("recording", {})
+        self.record_dir_edit = QLineEdit()
+        self.record_dir_edit.setReadOnly(True)
+        self.record_dir_edit.setPlaceholderText(
+            QDir.toNativeSeparators(str(default_recording_dir()))
+        )
+        self.record_dir_edit.textChanged.connect(self._on_record_dir_changed)
+        self._set_record_dir(recording_cfg.get("save_dir", ""))
+
+        self.record_browse_btn = QPushButton("Chọn...")
         self.record_browse_btn.clicked.connect(self._browse_record_dir)
-        self.record_default_btn = QPushButton("Dùng thư mục gợi ý")
+        self.record_default_btn = QPushButton("Mặc định")
         self.record_default_btn.clicked.connect(self._use_default_record_dir)
 
-        record_dir_row = QHBoxLayout()
-        record_dir_row.addWidget(self.record_dir_edit)
-        record_dir_row.addWidget(self.record_browse_btn)
-        record_dir_row.addWidget(self.record_default_btn)
-
-        # Ghi tự động khi có chuyển động (độc lập với nút REC thủ công).
-        motion_cfg = get_motion_config(config)
-        self.motion_check = QCheckBox("Tự động ghi khi phát hiện chuyển động")
-        self.motion_check.setChecked(motion_cfg["enabled"])
-
-        self.motion_sens_combo = QComboBox()
-        self.motion_sens_combo.addItem("Thấp — ít báo nhầm", "low")
-        self.motion_sens_combo.addItem("Vừa (khuyến nghị)", "medium")
-        self.motion_sens_combo.addItem("Cao — nhạy, dễ báo nhầm", "high")
-        idx = self.motion_sens_combo.findData(motion_cfg["sensitivity"])
-        self.motion_sens_combo.setCurrentIndex(idx if idx >= 0 else 1)
-
-        self.motion_post_roll_spin = QSpinBox()
-        self.motion_post_roll_spin.setRange(POST_ROLL_MIN_S, POST_ROLL_MAX_S)
-        self.motion_post_roll_spin.setSuffix(" giây")
-        self.motion_post_roll_spin.setValue(motion_cfg["post_roll_s"])
+        dir_row = QWidget()
+        dr = QVBoxLayout(dir_row)
+        dr.setContentsMargins(14, 10, 14, 12)
+        dr.setSpacing(8)
+        dr.addWidget(QLabel("Thư mục lưu ghi hình"))
+        dr.addWidget(self.record_dir_edit)
+        btns = QHBoxLayout()
+        btns.setSpacing(8)
+        btns.addWidget(self.record_browse_btn)
+        btns.addWidget(self.record_default_btn)
+        btns.addStretch(1)
+        dr.addLayout(btns)
 
         # Giới hạn dung lượng thư mục ghi hình + tự xoá bản ghi TỰ ĐỘNG cũ.
         retention_cfg = get_retention_config(config)
-        self.retention_check = QCheckBox("Tự xoá bản ghi tự động cũ khi đầy")
-        self.retention_check.setToolTip(
-            "Khi tổng dung lượng thư mục ghi hình vượt ngưỡng, xoá dần các lần ghi "
-            "TỰ ĐỘNG cũ nhất. Ghi thủ công (nút REC) không bao giờ bị tự xoá, "
-            "nhưng vẫn tính vào dung lượng."
-        )
+        self.retention_check = ToggleSwitch()
         self.retention_check.setChecked(retention_cfg["enabled"])
 
         self.retention_spin = QSpinBox()
         self.retention_spin.setRange(MIN_MAX_GB, MAX_MAX_GB)
         self.retention_spin.setSuffix(" GB")
         self.retention_spin.setValue(retention_cfg["max_gb"])
+        self.retention_spin.setAlignment(Qt.AlignRight)
+        self.retention_spin.setFixedWidth(110)
+        self.retention_spin.valueChanged.connect(self._refresh_usage)
 
-        self.retention_usage_label = QLabel(self._usage_text(config))
+        self.usage_bar = QProgressBar()
+        self.usage_bar.setTextVisible(False)
+        self.usage_bar.setRange(0, 1000)
+
+        self.retention_usage_label = QLabel("")
+        self.retention_usage_label.setObjectName("rowHint")
         self.retention_usage_label.setWordWrap(True)
-        self.retention_usage_label.setMinimumHeight(36)
-        self.retention_usage_label.setStyleSheet("color: #9a9aa2;")
 
-        form = QFormLayout()
-        form.addRow("Địa chỉ IP camera:", self.ip_edit)
-        form.addRow("Port:", self.port_spin)
-        form.addRow("Tên đăng nhập:", self.user_edit)
-        form.addRow("Mật khẩu:", self.pass_edit)
-        form.addRow("", self.show_pass_check)
-        form.addRow("Loại luồng:", self.stream_combo)
-        form.addRow("Channel (nâng cao):", self.channel_edit)
-        form.addRow("", self.autostart_check)
-        form.addRow("Thư mục lưu ghi hình khẩn cấp:", record_dir_row)
-        form.addRow("", self.motion_check)
-        form.addRow("Độ nhạy chuyển động:", self.motion_sens_combo)
-        form.addRow("Ghi thêm sau chuyển động cuối:", self.motion_post_roll_spin)
-        form.addRow("", self.retention_check)
-        form.addRow("Dung lượng tối đa thư mục ghi hình:", self.retention_spin)
-        form.addRow("", self.retention_usage_label)
+        usage_row = QWidget()
+        ur = QVBoxLayout(usage_row)
+        ur.setContentsMargins(14, 10, 14, 12)
+        ur.setSpacing(8)
+        ur.addWidget(self.usage_bar)
+        ur.addWidget(self.retention_usage_label)
 
-        self.status_label = QLabel("")
-        self.status_label.setWordWrap(True)
+        self._usage = self._compute_usage(config)
+        self._refresh_usage()
 
-        self.test_btn = QPushButton("Kiểm tra kết nối")
-        self.test_btn.clicked.connect(self._start_test)
+        page_recording = QWidget()
+        pr = QVBoxLayout(page_recording)
+        pr.setContentsMargins(0, 0, 0, 0)
+        pr.setSpacing(6)
+        pr.addWidget(_section("Nơi lưu"))
+        pr.addWidget(_make_card([dir_row]))
+        pr.addWidget(_section("Dung lượng"))
+        pr.addWidget(_make_card([
+            _make_row("Tự xoá bản ghi tự động cũ",
+                      "Khi đầy, xoá dần từ bản cũ nhất. Ghi thủ công (nút REC) "
+                      "không bao giờ bị tự xoá.", self.retention_check),
+            _make_row("Dung lượng tối đa", "Tính trên toàn bộ thư mục ghi hình",
+                      self.retention_spin),
+            usage_row,
+        ]))
+        pr.addStretch(1)
 
-        test_row = QHBoxLayout()
-        test_row.addWidget(self.test_btn)
-        test_row.addStretch()
+        # ---------- trang 3: Chuyển động ----------
+        motion_cfg = get_motion_config(config)
+        self.motion_check = ToggleSwitch()
+        self.motion_check.setChecked(motion_cfg["enabled"])
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Save).setText("Lưu")
-        buttons.button(QDialogButtonBox.Cancel).setText("Huỷ")
-        buttons.accepted.connect(self._on_save)
-        buttons.rejected.connect(self.reject)
+        self.motion_sens_combo = SegmentedControl(
+            [("Thấp", "low"), ("Vừa", "medium"), ("Cao", "high")],
+        )
+        self.motion_sens_combo.setCurrentData(motion_cfg["sensitivity"])
+
+        self.motion_post_roll_spin = QSpinBox()
+        self.motion_post_roll_spin.setRange(POST_ROLL_MIN_S, POST_ROLL_MAX_S)
+        self.motion_post_roll_spin.setSuffix(" giây")
+        self.motion_post_roll_spin.setValue(motion_cfg["post_roll_s"])
+        self.motion_post_roll_spin.setAlignment(Qt.AlignRight)
+        self.motion_post_roll_spin.setFixedWidth(110)
+
+        motion_note = QLabel(
+            "Độ nhạy Thấp ít báo nhầm, Cao dễ bắt chuyển động nhỏ. Muốn chỉ theo dõi "
+            "một vùng (vd quanh cửa), đặt khoá \"roi\" trong config.json — xem README."
+        )
+        motion_note.setObjectName("note")
+        motion_note.setWordWrap(True)
+        motion_note.setContentsMargins(4, 0, 4, 0)
+
+        page_motion = QWidget()
+        pm = QVBoxLayout(page_motion)
+        pm.setContentsMargins(0, 0, 0, 0)
+        pm.setSpacing(6)
+        pm.addWidget(_section("Ghi tự động"))
+        pm.addWidget(_make_card([
+            _make_row("Tự động ghi khi có chuyển động",
+                      "Độc lập với nút REC thủ công", self.motion_check),
+            _make_row("Độ nhạy", "", self.motion_sens_combo),
+            _make_row("Ghi thêm sau chuyển động cuối",
+                      "Ghi tiếp bao lâu sau lần chuyển động cuối cùng",
+                      self.motion_post_roll_spin),
+        ]))
+        pm.addWidget(motion_note)
+        pm.addStretch(1)
+
+        # ---------- khung chính: thanh tab + trang + nút Huỷ/Lưu ----------
+        self._stack = QStackedWidget()
+        for page in (page_connection, page_recording, page_motion):
+            self._stack.addWidget(page)
+
+        self._tabs = SegmentedControl(
+            [("Kết nối", 0), ("Ghi hình", 1), ("Chuyển động", 2)],
+            stretch=True, track="#2c2c2e",
+        )
+        self._tabs.currentChanged.connect(self._stack.setCurrentIndex)
+
+        self.cancel_btn = QPushButton("Huỷ")
+        self.cancel_btn.clicked.connect(self.reject)
+        self.save_btn = QPushButton("Lưu")
+        self.save_btn.setObjectName("primary")
+        self.save_btn.setDefault(True)
+        self.save_btn.clicked.connect(self._on_save)
+
+        bottom = QHBoxLayout()
+        bottom.addStretch(1)
+        bottom.addWidget(self.cancel_btn)
+        bottom.addWidget(self.save_btn)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addLayout(test_row)
-        layout.addWidget(self.status_label)
-        layout.addWidget(buttons)
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(14)
+        layout.addWidget(self._tabs)
+        layout.addWidget(self._stack, 1)
+        layout.addLayout(bottom)
 
         self._test_instance = None
         self._test_player = None
         self._test_timer = None
         self._test_elapsed = 0
 
+        # Mở hộp thoại là có thể gõ IP luôn (và không để thanh tab giữ focus,
+        # tránh hiện viền focus xanh quanh thanh tab ngay khi mở).
+        self.ip_edit.setFocus()
+
     # ---------- helpers ----------
 
     def _toggle_password_visibility(self, checked: bool):
         self.pass_edit.setEchoMode(QLineEdit.Normal if checked else QLineEdit.Password)
+        self.show_pass_check.setText("Ẩn" if checked else "Hiện")
 
     def _current_rtsp_dict(self) -> dict:
         return {
@@ -224,16 +408,34 @@ class SettingsDialog(QDialog):
         return {"save_dir": self.record_dir_edit.text().strip()}
 
     @staticmethod
-    def _usage_text(config: dict) -> str:
-        """Mức dùng hiện tại của thư mục ghi hình (theo thư mục ĐÃ LƯU)."""
+    def _compute_usage(config: dict):
+        """Mức dùng hiện tại của thư mục ghi hình (theo thư mục ĐÃ LƯU);
+        None nếu không đọc được (chỉ là thông tin phụ)."""
         try:
             base = resolve_recording_base_dir(config.get("recording", {}).get("save_dir", ""))
-            u = summarize_usage(base)
-        except Exception:  # noqa: BLE001 — chỉ là thông tin phụ
-            return ""
-        return (
-            f"Đang dùng {format_size(u['total'])}: "
-            f"{format_size(u['auto'])} tự động (có thể xoá), "
+            return summarize_usage(base)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _refresh_usage(self, *_):
+        """Vẽ lại thanh + dòng chữ mức dùng theo ngưỡng đang chọn (kể cả khi
+        người dùng vừa kéo ô "Dung lượng tối đa", chưa bấm Lưu)."""
+        u = self._usage
+        cap_gb = self.retention_spin.value()
+        if u is None:
+            self.usage_bar.setValue(0)
+            self.retention_usage_label.setText("")
+            return
+        ratio = u["total"] / (cap_gb * 1024 ** 3)
+        self.usage_bar.setValue(min(1000, int(ratio * 1000)))
+        level = "full" if ratio >= 1.0 else "warn" if ratio >= 0.9 else "ok"
+        if self.usage_bar.property("level") != level:
+            self.usage_bar.setProperty("level", level)
+            self.usage_bar.style().unpolish(self.usage_bar)
+            self.usage_bar.style().polish(self.usage_bar)
+        self.retention_usage_label.setText(
+            f"Đang dùng {format_size(u['total'])} / {cap_gb} GB  ·  "
+            f"{format_size(u['auto'])} tự động (có thể xoá)  ·  "
             f"{format_size(u['protected'])} được giữ (thủ công/đang ghi)"
         )
 
@@ -253,18 +455,27 @@ class SettingsDialog(QDialog):
             "post_roll_s": self.motion_post_roll_spin.value(),
         }
 
-    # ---------- thư mục lưu ghi hình khẩn cấp (Sprint 5.5) ----------
+    # ---------- thư mục lưu ghi hình (Sprint 5.5) ----------
+
+    def _set_record_dir(self, path: str):
+        """Hiển thị đường dẫn kiểu Windows (dấu \\), luôn cuộn về ĐẦU chuỗi để
+        thấy ổ đĩa/thư mục gốc thay vì bị cắt mất phần đầu."""
+        self.record_dir_edit.setText(QDir.toNativeSeparators(path) if path else "")
+
+    def _on_record_dir_changed(self, text: str):
+        self.record_dir_edit.setCursorPosition(0)
+        self.record_dir_edit.setToolTip(text)
 
     def _browse_record_dir(self):
         start_dir = self.record_dir_edit.text().strip() or str(default_recording_dir())
         chosen = QFileDialog.getExistingDirectory(
-            self, "Chọn thư mục lưu ghi hình khẩn cấp", start_dir,
+            self, "Chọn thư mục lưu ghi hình", start_dir,
         )
         if chosen:
-            self.record_dir_edit.setText(chosen)
+            self._set_record_dir(chosen)
 
     def _use_default_record_dir(self):
-        self.record_dir_edit.setText(str(default_recording_dir()))
+        self._set_record_dir(str(default_recording_dir()))
 
     # ---------- kiểm tra kết nối ----------
 
@@ -337,6 +548,7 @@ class SettingsDialog(QDialog):
     def _on_save(self):
         rtsp_cfg = self._current_rtsp_dict()
         if not rtsp_cfg["ip"]:
+            self._tabs.setCurrentIndex(0)  # quay về tab có ô IP để người dùng thấy lỗi
             self._set_status("Vui lòng nhập địa chỉ IP camera trước khi lưu.", ok=False)
             return
         self._stop_test()

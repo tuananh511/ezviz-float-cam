@@ -19,10 +19,10 @@ import time
 from PySide6.QtWidgets import (
     QWidget, QMessageBox, QDialog, QVBoxLayout, QLabel, QPushButton,
 )
-from PySide6.QtCore import Qt, QPoint, QRect, QTimer
+from PySide6.QtCore import Qt, QPoint, QRect, QTimer, QVariantAnimation, QEasingCurve
 from PySide6.QtGui import (
     QPainter, QColor, QPen, QCursor, QPainterPath, QRegion, QPolygon, QFont,
-    QFontMetrics,
+    QFontMetrics, QLinearGradient,
 )
 
 from stream_widget import StreamWidget
@@ -52,6 +52,15 @@ ICON_GAP = 6
 ABOUT_ICON_SIZE = 18
 ABOUT_ICON_MARGIN = 10
 
+# Điều khiển (icon REC / mute / "i", tay cầm resize) chỉ hiện khi rê chuột vào
+# cửa sổ, mờ dần khi chuột rời đi — kiểu thanh điều khiển của QuickTime/Apple TV.
+# Chấm trạng thái, "REC mm:ss" khi đang ghi, huy hiệu AUTO REC và viền cam LUÔN
+# hiện vì là thông tin trạng thái, không phải nút bấm.
+HOVER_POLL_MS = 80       # tần suất kiểm tra chuột có nằm trong cửa sổ không
+FADE_IN_MS = 140
+FADE_OUT_MS = 320
+SCRIM_HEIGHT = 46        # dải tối mờ phía trên/dưới giúp icon dễ đọc trên nền sáng
+
 # Đã THỬ và XÁC NHẬN: acrylic blur thật (SetWindowCompositionAttribute) được
 # DWM vẽ trên toàn bộ hình chữ nhật của cửa sổ, KHÔNG tôn trọng vùng bo góc
 # (setMask/window region) ở tầng Qt/USER32 — nên khi bật blur, 4 góc luôn
@@ -78,6 +87,7 @@ class _Overlay(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        self.glass_window.paint_scrim(painter)
         self.glass_window.paint_status_dot(painter)
         self.glass_window.paint_resize_grip(painter)
         self.glass_window.paint_action_icons(painter)
@@ -189,6 +199,71 @@ class GlassWindow(QWidget):
         self.status_timer.timeout.connect(self.overlay.update)
         self.status_timer.start(500)  # 500ms để huy hiệu AUTO REC nhấp nháy mượt
 
+        # Điều khiển chỉ hiện khi chuột ở trong cửa sổ. Dùng kiểm tra vị trí
+        # chuột theo chu kỳ thay vì enter/leaveEvent vì cửa sổ có nhiều widget
+        # con chồng nhau (video + lớp phủ) — cách này không bị lệch sự kiện.
+        self._controls_opacity = 0.0
+        self._controls_target = 0.0
+        self._controls_anim = QVariantAnimation(self)
+        self._controls_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._controls_anim.valueChanged.connect(self._on_controls_anim)
+        self._hover_timer = QTimer(self)
+        self._hover_timer.timeout.connect(self._poll_hover)
+        self._hover_timer.start(HOVER_POLL_MS)
+
+    # ---------- điều khiển hiện khi rê chuột ----------
+
+    def _poll_hover(self):
+        if not self.isVisible():
+            return
+        inside = (
+            self._resizing
+            or self._drag_pos is not None
+            or self.rect().contains(self.mapFromGlobal(QCursor.pos()))
+        )
+        self._set_controls_target(1.0 if inside else 0.0)
+
+    def _set_controls_target(self, target: float):
+        if target == self._controls_target:
+            return
+        self._controls_target = target
+        self._controls_anim.stop()
+        self._controls_anim.setDuration(FADE_IN_MS if target > self._controls_opacity else FADE_OUT_MS)
+        self._controls_anim.setStartValue(self._controls_opacity)
+        self._controls_anim.setEndValue(target)
+        self._controls_anim.start()
+
+    def _on_controls_anim(self, value):
+        self._controls_opacity = float(value)
+        self.overlay.update()
+
+    def _controls_clickable(self) -> bool:
+        """Nút chỉ nhận click khi đã hiện rõ — tránh bấm nhầm vào nút còn vô
+        hình ngay khoảnh khắc chuột vừa vào cửa sổ."""
+        return self._controls_opacity >= 0.5
+
+    def paint_scrim(self, painter: QPainter):
+        """Dải tối mờ ở mép trên/dưới (đậm dần khi điều khiển hiện) để icon
+        trắng không bị chìm trên nền video sáng."""
+        op = self._controls_opacity
+        if op < 0.01:
+            return
+        path = QPainterPath()
+        path.addRoundedRect(0, 0, self.width(), self.height(),
+                            self.corner_radius, self.corner_radius)
+        painter.save()
+        painter.setClipPath(path)
+        painter.setPen(Qt.NoPen)
+        for top in (True, False):
+            y0 = 0 if top else self.height() - SCRIM_HEIGHT
+            grad = QLinearGradient(0, y0, 0, y0 + SCRIM_HEIGHT)
+            near, far = (QColor(0, 0, 0, int(120 * op)), QColor(0, 0, 0, 0))
+            grad.setColorAt(0.0, near if top else far)
+            grad.setColorAt(1.0, far if top else near)
+            painter.setBrush(grad)
+            painter.drawRect(0, y0, self.width(), SCRIM_HEIGHT)
+        painter.restore()
+
     # ---------- vị trí ban đầu ----------
 
     def _restore_position(self, win_cfg: dict):
@@ -287,7 +362,9 @@ class GlassWindow(QWidget):
         painter.drawEllipse(QPoint(cx, cy), radius, radius)
 
     def paint_resize_grip(self, painter: QPainter):
-        grip_color = QColor(255, 255, 255, 90)
+        if self._controls_opacity < 0.01:
+            return
+        grip_color = QColor(255, 255, 255, int(90 * self._controls_opacity))
         painter.setPen(Qt.NoPen)
         painter.setBrush(grip_color)
         x0 = self.width() - GRIP_SIZE
@@ -346,7 +423,8 @@ class GlassWindow(QWidget):
         text_w = QFontMetrics(font).horizontalAdvance(text)
 
         height = 18
-        x = ABOUT_ICON_MARGIN + ABOUT_ICON_SIZE + 6
+        # Dịch sang trái khi icon "i" đang ẩn, để không chừa khoảng trống.
+        x = ABOUT_ICON_MARGIN + round((ABOUT_ICON_SIZE + 6) * self._controls_opacity)
         y = self.height() - ABOUT_ICON_MARGIN - height
         pill = QRect(x, y, 14 + text_w + 10, height)
 
@@ -401,20 +479,29 @@ class GlassWindow(QWidget):
         return QRect(x, ICON_MARGIN, ICON_SIZE, ICON_SIZE)
 
     def paint_action_icons(self, painter: QPainter):
-        self._draw_record_icon(painter, self._record_rect())
-        self._draw_mute_icon(painter, self._mute_rect())
+        op = self._controls_opacity
+        recording = self.recorder.is_recording()
+        muted = self.stream_widget.is_muted()
+        # Đang ghi / đang tắt tiếng là THÔNG TIN trạng thái nên nút giữ nguyên
+        # hiện; ở trạng thái bình thường thì chỉ hiện khi rê chuột.
+        self._draw_record_icon(painter, self._record_rect(), 1.0 if recording else op)
+        self._draw_mute_icon(painter, self._mute_rect(), max(op, 0.9) if muted else op)
 
-    def _draw_record_icon(self, painter: QPainter, rect: QRect):
+    def _draw_record_icon(self, painter: QPainter, rect: QRect, opacity: float = 1.0):
         recording = self.recorder.is_recording()
 
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 110))
-        painter.drawEllipse(rect)
+        if opacity > 0.01:
+            painter.save()
+            painter.setOpacity(opacity)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 110))
+            painter.drawEllipse(rect)
 
-        dot_color = QColor(220, 40, 40) if recording else QColor(255, 255, 255, 210)
-        painter.setBrush(dot_color)
-        inset = 5
-        painter.drawEllipse(rect.adjusted(inset, inset, -inset, -inset))
+            dot_color = QColor(220, 40, 40) if recording else QColor(255, 255, 255, 210)
+            painter.setBrush(dot_color)
+            inset = 5
+            painter.drawEllipse(rect.adjusted(inset, inset, -inset, -inset))
+            painter.restore()
 
         if recording:
             elapsed = self.recorder.elapsed_seconds()
@@ -427,8 +514,18 @@ class GlassWindow(QWidget):
             text_rect = QRect(rect.left() - 92, rect.top(), 86, rect.height())
             painter.drawText(text_rect, Qt.AlignRight | Qt.AlignVCenter, text)
 
-    def _draw_mute_icon(self, painter: QPainter, rect: QRect):
+    def _draw_mute_icon(self, painter: QPainter, rect: QRect, opacity: float = 1.0):
+        if opacity <= 0.01:
+            return
+        painter.save()
+        try:
+            self._draw_mute_icon_body(painter, rect, opacity)
+        finally:
+            painter.restore()
+
+    def _draw_mute_icon_body(self, painter: QPainter, rect: QRect, opacity: float):
         muted = self.stream_widget.is_muted()
+        painter.setOpacity(opacity)
 
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(0, 0, 0, 110))
@@ -460,6 +557,14 @@ class GlassWindow(QWidget):
         )
 
     def paint_about_icon(self, painter: QPainter):
+        if self._controls_opacity < 0.01:
+            return
+        painter.save()
+        painter.setOpacity(self._controls_opacity)
+        self._paint_about_icon_body(painter)
+        painter.restore()
+
+    def _paint_about_icon_body(self, painter: QPainter):
         rect = self._about_rect()
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(0, 0, 0, 110))
@@ -552,13 +657,14 @@ class GlassWindow(QWidget):
         # icon hành động có ưu tiên cao nhất — bấm trúng icon thì KHÔNG bắt
         # đầu kéo-thả cửa sổ (2 icon nằm ở vùng góc trên-phải, không chồng
         # lấn với tay cầm resize ở góc dưới-phải nên không xung đột logic).
-        if self._record_rect().contains(pos):
+        clickable = self._controls_clickable()
+        if self._record_rect().contains(pos) and (clickable or self.recorder.is_recording()):
             self.toggle_recording()
             return
-        if self._mute_rect().contains(pos):
+        if self._mute_rect().contains(pos) and (clickable or self.stream_widget.is_muted()):
             self.toggle_mute()
             return
-        if self._about_rect().contains(pos):
+        if self._about_rect().contains(pos) and clickable:
             self.show_about_dialog()
             return
         if self._grip_rect().contains(pos):
@@ -648,6 +754,7 @@ class GlassWindow(QWidget):
         # Dừng ghi tự động (nếu đang chạy) trước, rồi mới tới ghi tay.
         self.motion.shutdown()
         self.cleanup.shutdown()
+        self._hover_timer.stop()
         if self.recorder.is_recording():
             # Dừng ghi hình đúng cách trước khi thoát hẳn. File .mkv chống
             # chịu tốt hơn .mp4 khi bị ngắt đột ngột (xem giải thích trong

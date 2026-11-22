@@ -23,9 +23,10 @@ Ngoài xem trực tiếp, app còn có:
 
 - Hiển thị stream RTSP, cửa sổ bo góc – kính mờ – luôn nổi, kéo-thả, resize bằng góc dưới-phải (giữ đúng tỉ lệ video).
 - Tự kết nối lại khi mất tín hiệu (màn nhiễu "ĐANG KẾT NỐI LẠI" / "MẤT TÍN HIỆU"), tự khôi phục khi có tín hiệu.
+- Giao diện gọn như trình phát video hiện đại: các nút (REC, tắt tiếng, thông tin, tay cầm resize) **chỉ hiện khi rê chuột vào cửa sổ** và mờ dần khi chuột rời đi, để lại hình sạch. Thông tin trạng thái (chấm kết nối, `REC`, `AUTO REC`) luôn hiện.
 - Tắt tiếng (mute) ngay từ icon trên cửa sổ.
 - Icon khay hệ thống: ẩn/hiện cửa sổ, bật/tắt stream, bật/tắt ghi tự động, mở Cài đặt, thoát.
-- Cài đặt có nút "Kiểm tra kết nối" trước khi lưu.
+- Hộp **Cài đặt** chia 3 tab (Kết nối / Ghi hình / Chuyển động), dùng công tắc gạt và thanh chọn kiểu Apple, có nút "Kiểm tra kết nối" trước khi lưu và thanh hiển thị mức dùng dung lượng.
 - Tuỳ chọn khởi động cùng Windows (registry HKCU, không cần quyền admin).
 
 **Ghi hình**
@@ -59,14 +60,14 @@ Camera và máy tính phải cùng mạng LAN. Nên đặt IP tĩnh (hoặc gán
 | Thao tác | Cách làm |
 |---|---|
 | Di chuyển / đổi cỡ cửa sổ | Kéo cửa sổ / kéo góc dưới-phải |
-| Ghi hình thủ công | Bấm nút REC (đỏ) trên cửa sổ, bấm lần nữa để dừng. Góc trên-phải hiện `REC mm:ss` |
-| Tắt/bật tiếng | Icon loa trên cửa sổ |
-| Thông tin phiên bản | Icon `i` góc dưới-trái |
+| Ghi hình thủ công | Rê chuột vào cửa sổ, bấm nút REC trên góc trên-phải, bấm lần nữa để dừng. Khi đang ghi nút REC và `REC mm:ss` luôn hiện |
+| Tắt/bật tiếng | Icon loa trên cửa sổ (khi đang tắt tiếng icon luôn hiện, màu đỏ) |
+| Thông tin phiên bản | Icon `i` góc dưới-trái (hiện khi rê chuột) |
 | Bật/tắt ghi tự động | Menu khay hệ thống → **Tự động ghi khi có chuyển động** |
 | Đổi cấu hình | Menu khay → **Cài đặt...** |
 | Ẩn / hiện / thoát | Menu khay hệ thống |
 
-Chấm tròn góc trên-trái cho biết trạng thái kết nối. Khi đang ghi tự động, cửa sổ có **viền cam** và huy hiệu `AUTO REC mm:ss` ở góc dưới-trái; khi ghi tay thì `REC` đỏ ở góc trên-phải. Hai chế độ chạy được cùng lúc.
+Các nút điều khiển chỉ hiện khi chuột ở trong cửa sổ. Chấm tròn góc trên-trái cho biết trạng thái kết nối (xanh: đang xem, vàng: đang kết nối, đỏ: mất tín hiệu). Khi đang ghi tự động, cửa sổ có **viền cam** và huy hiệu `AUTO REC mm:ss` ở góc dưới-trái; khi ghi tay thì `REC` đỏ ở góc trên-phải. Hai chế độ chạy được cùng lúc.
 
 ## Tự động ghi khi có chuyển động
 
@@ -180,10 +181,11 @@ Script dùng `.venv\` nếu có, và build bằng PyInstaller (onefile, không h
 ```
 src/
   main.py                 entry point; chạy khôi phục phiên dở dang lúc khởi động
-  glass_window.py         cửa sổ nổi, hiệu ứng kính mờ, icon REC/mute/about, huy hiệu AUTO REC
+  glass_window.py         cửa sổ nổi, điều khiển hiện khi rê chuột, icon REC/mute/about, huy hiệu AUTO REC
   stream_widget.py        render video RTSP qua libVLC (memory callback); cấp khung hình cho phát hiện chuyển động
   tray.py                 icon khay hệ thống và menu
-  settings_dialog.py      dialog cấu hình + kiểm tra kết nối
+  settings_dialog.py      dialog cấu hình 3 tab + kiểm tra kết nối
+  ui_widgets.py           công tắc gạt (ToggleSwitch) và thanh chọn (SegmentedControl) tự vẽ bằng QPainter
   config_loader.py        đọc/ghi config.json theo user
   autostart.py            khởi động cùng Windows (registry HKCU)
   windows_blur.py         hiệu ứng Acrylic blur (Windows API)
