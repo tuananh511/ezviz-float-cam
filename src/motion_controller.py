@@ -11,9 +11,10 @@ Recorder tự động là một đối tượng ĐỘC LẬP với recorder ghi 
 bấm/tắt REC thủ công không đụng tới ghi tự động và ngược lại; hai bên ghi vào
 hai thư mục phiên khác nhau nên không bao giờ ghi đè file của nhau.
 
-Ghi chú: ghi bắt đầu SAU khi phát hiện chuyển động (cần vài khung liên tiếp để
-loại nhiễu), nên vài giây đầu của sự kiện có thể không có trong file. Muốn có
-"pre-roll" phải ghi liên tục vào bộ đệm — chưa làm ở bản này.
+Ghi chú: ghi bắt đầu SAU khi phát hiện chuyển động (phải kéo dài đủ
+`min_duration_s` để loại vệt sáng/nhiễu), nên vài giây đầu của sự kiện có thể
+không có trong file. Bật `motion.pre_roll_s` > 0 thì có thêm đoạn NGAY TRƯỚC
+chuyển động nhờ bộ đệm cuốn chiếu (xem preroll_buffer.py).
 """
 
 from __future__ import annotations
@@ -32,6 +33,8 @@ from motion import (
     MotionRecordingPolicy,
     get_motion_config,
 )
+
+SAMPLE_INTERVAL_S = 0.5
 
 SAMPLE_INTERVAL_MS = 500          # lấy mẫu ~2 khung/giây — đủ cho cửa ra vào
 ERROR_BACKOFF_S = 60.0            # lỗi ghi (đầy đĩa, rớt luồng...) -> nghỉ rồi mới thử lại
@@ -53,16 +56,21 @@ def frame_to_gray_bytes(image: QImage, width: int = DETECT_WIDTH, height: int = 
 class MotionRecordingController(QObject):
     state_changed = Signal()
 
-    def __init__(self, stream_widget, recorder, get_config, parent=None, clock=time.monotonic):
+    def __init__(self, stream_widget, recorder, get_config, parent=None,
+                 clock=time.monotonic, preroll=None):
         super().__init__(parent)
         self._stream = stream_widget
         self._recorder = recorder
         self._get_config = get_config      # callable trả về dict config đầy đủ
         self._clock = clock
+        self._preroll = preroll            # PreRollBuffer hoặc None (không có pre-roll)
 
         self._cfg = get_motion_config(self._get_config())
-        self._detector = MotionDetector.from_config(self._cfg)
-        self._policy = MotionRecordingPolicy(post_roll_s=self._cfg["post_roll_s"])
+        self._detector = MotionDetector.from_config(self._cfg, SAMPLE_INTERVAL_S)
+        trigger, window = self._trigger_params(self._cfg)
+        self._policy = MotionRecordingPolicy(
+            post_roll_s=self._cfg["post_roll_s"], trigger_samples=trigger, window=window,
+        )
         self._suspended_until = 0.0
         self.last_error: str | None = None
         self.last_error_at = 0.0
@@ -71,9 +79,26 @@ class MotionRecordingController(QObject):
         self._timer.setInterval(SAMPLE_INTERVAL_MS)
         self._timer.timeout.connect(self._tick)
 
+    @staticmethod
+    def _trigger_params(cfg: dict) -> tuple[int, int]:
+        """(số mẫu "có chuyển động" cần có, cửa sổ xét) từ `min_duration_s`:
+        vd 2 giây ở 2 mẫu/giây -> cần 4 mẫu trong 6 mẫu gần nhất, nên một vệt
+        sáng thoáng qua (<2 giây) bị bỏ qua nhưng người đi chậm vẫn được ghi."""
+        need = max(1, round(cfg["min_duration_s"] / SAMPLE_INTERVAL_S))
+        return need, need + max(1, need // 2)
+
+    def _sync_preroll(self):
+        if self._preroll is None:
+            return
+        if self._cfg["enabled"] and self._cfg["pre_roll_s"] > 0:
+            self._preroll.configure(self._get_config().get("rtsp", {}), self._cfg["pre_roll_s"])
+        else:
+            self._preroll.configure(None, 0)
+
     # ---------- vòng đời ----------
 
     def start(self):
+        self._sync_preroll()
         if not self._timer.isActive():
             self._timer.start()
 
@@ -81,6 +106,8 @@ class MotionRecordingController(QObject):
         """Gọi khi thoát app: dừng lấy mẫu và dừng ghi tự động đang chạy."""
         self._timer.stop()
         self._stop_recording()
+        if self._preroll is not None:
+            self._preroll.shutdown()
 
     # ---------- cấu hình ----------
 
@@ -90,11 +117,13 @@ class MotionRecordingController(QObject):
     def apply_config(self):
         """Đọc lại cấu hình (sau khi người dùng đổi ở Cài đặt / menu khay)."""
         self._cfg = get_motion_config(self._get_config())
-        self._detector = MotionDetector.from_config(self._cfg)
-        self._policy.post_roll_s = self._cfg["post_roll_s"]
+        self._detector = MotionDetector.from_config(self._cfg, SAMPLE_INTERVAL_S)
+        trigger, window = self._trigger_params(self._cfg)
+        self._policy.configure(self._cfg["post_roll_s"], trigger, window)
         self._recorder.stream_type = self._cfg["stream_type"]
         if not self._cfg["enabled"]:
             self._stop_recording()
+        self._sync_preroll()
         self.state_changed.emit()
 
     # ---------- trạng thái cho UI ----------
@@ -151,6 +180,11 @@ class MotionRecordingController(QObject):
         config = self._get_config()
         rtsp_cfg = config.get("rtsp", {})
         save_dir = config.get("recording", {}).get("save_dir", "")
+        # Lấy đoạn đệm NGAY (trước khi bật ghi) — vài trăm KB đọc vào RAM, để
+        # VLC có xoá file đệm cũ trong lúc recorder khởi động cũng không sao.
+        clip = b""
+        if self._preroll is not None and self._cfg["pre_roll_s"] > 0:
+            clip = self._preroll.snapshot(self._cfg["pre_roll_s"])
         try:
             self._recorder.start(rtsp_cfg, save_dir)
         except Exception as exc:  # noqa: BLE001 — lỗi VLC có thể là nhiều loại
@@ -161,4 +195,6 @@ class MotionRecordingController(QObject):
             # recording_error đã được emit từ recorder.
             self._fail("không bắt đầu được phiên ghi", now)
             return
+        if clip:
+            self._recorder.write_preroll_clip(clip)
         self.state_changed.emit()

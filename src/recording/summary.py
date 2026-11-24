@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Union
 
+from .naming import PRE_ROLL_FILENAME
 from .session import RecordingSession, RecordingStatus
 
 __all__ = ["SUMMARY_FILENAME", "format_size", "format_duration", "build_summary", "write_summary"]
@@ -60,7 +61,7 @@ def _local(dt: datetime) -> str:
     return dt.astimezone().strftime("%d/%m/%Y %H:%M:%S")
 
 
-def build_summary(session: RecordingSession, kind_title: str) -> str:
+def build_summary(session: RecordingSession, kind_title: str, pre_roll_size: int = 0) -> str:
     lines = [kind_title, "=" * len(kind_title), ""]
     lines.append(f"Bắt đầu   : {_local(session.started_at)}")
     if session.ended_at is not None:
@@ -83,6 +84,11 @@ def build_summary(session: RecordingSession, kind_title: str) -> str:
         lines.append("Bảo vệ    : không — sẽ bị tự xoá (bản cũ nhất trước) khi thư mục ghi hình đầy")
 
     lines += ["", "Các đoạn video:"]
+    if pre_roll_size > 0:
+        lines.append(
+            f"  0. {PRE_ROLL_FILENAME}  (đoạn NGAY TRƯỚC khi phát hiện chuyển động, "
+            f"chất lượng luồng nhẹ, {format_size(pre_roll_size)})"
+        )
     if not session.segments:
         lines.append("  (chưa có)")
     for i, seg in enumerate(session.segments, 1):
@@ -100,8 +106,14 @@ def write_summary(session_dir: Union[str, os.PathLike], session: RecordingSessio
     """Ghi thong-tin.txt (UTF-8 có BOM để Notepad hiển thị đúng tiếng Việt).
     Trả về True nếu ghi được; không bao giờ raise."""
     try:
-        path = Path(session_dir) / SUMMARY_FILENAME
-        path.write_text(build_summary(session, kind_title), encoding="utf-8-sig")
+        d = Path(session_dir)
+        try:
+            pre_roll_size = (d / PRE_ROLL_FILENAME).stat().st_size
+        except OSError:
+            pre_roll_size = 0
+        (d / SUMMARY_FILENAME).write_text(
+            build_summary(session, kind_title, pre_roll_size), encoding="utf-8-sig",
+        )
         return True
     except Exception:  # noqa: BLE001 — ghi chú phụ, không được chặn ghi hình
         return False

@@ -14,14 +14,15 @@ dict rtsp mới qua get_rtsp_config() khi exec() == Accepted. Việc lưu config
 import vlc
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QSpinBox, QPushButton,
+    QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QSpinBox, QDoubleSpinBox, QPushButton,
     QLabel, QFileDialog, QFrame, QStackedWidget, QProgressBar, QWidget,
 )
 from PySide6.QtCore import QDir, QTimer, Qt
 
 from config_loader import build_rtsp_url
 from motion import (
-    POST_ROLL_MAX_S, POST_ROLL_MIN_S, get_motion_config,
+    MIN_DURATION_MAX_S, MIN_DURATION_MIN_S, POST_ROLL_MAX_S, POST_ROLL_MIN_S,
+    PRE_ROLL_MAX_S, get_motion_config,
 )
 from recorder import default_recording_dir
 from recording import resolve_recording_base_dir
@@ -44,11 +45,11 @@ QLabel#rowHint, QLabel#note, QLabel#section { color: #8e8e93; font-size: 11px; }
 QLabel#section { font-weight: 600; padding: 4px 4px 0 4px; }
 QFrame#card { background-color: #2c2c2e; border-radius: 10px; }
 QFrame#sep { background-color: #3a3a3c; border: none; min-height: 1px; max-height: 1px; }
-QLineEdit, QSpinBox {
+QLineEdit, QSpinBox, QDoubleSpinBox {
     background-color: #1c1c1e; color: #f5f5f7; border: 1px solid transparent;
     border-radius: 6px; padding: 5px 8px; selection-background-color: #0a84ff;
 }
-QLineEdit:focus, QSpinBox:focus { border: 1px solid #0a84ff; }
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #0a84ff; }
 QLineEdit:read-only { color: #c7c7cc; }
 QPushButton {
     background-color: #3a3a3c; color: #f5f5f7; border: none;
@@ -314,9 +315,30 @@ class SettingsDialog(QDialog):
         self.motion_post_roll_spin.setAlignment(Qt.AlignRight)
         self.motion_post_roll_spin.setFixedWidth(110)
 
+        self.motion_ignore_light_check = ToggleSwitch()
+        self.motion_ignore_light_check.setChecked(motion_cfg["ignore_light_changes"])
+
+        self.motion_min_duration_spin = QDoubleSpinBox()
+        self.motion_min_duration_spin.setRange(MIN_DURATION_MIN_S, MIN_DURATION_MAX_S)
+        self.motion_min_duration_spin.setSingleStep(0.5)
+        self.motion_min_duration_spin.setDecimals(1)
+        self.motion_min_duration_spin.setSuffix(" giây")
+        self.motion_min_duration_spin.setValue(motion_cfg["min_duration_s"])
+        self.motion_min_duration_spin.setAlignment(Qt.AlignRight)
+        self.motion_min_duration_spin.setFixedWidth(110)
+
+        self.motion_pre_roll_spin = QSpinBox()
+        self.motion_pre_roll_spin.setRange(0, PRE_ROLL_MAX_S)
+        self.motion_pre_roll_spin.setSpecialValueText("Tắt")
+        self.motion_pre_roll_spin.setSuffix(" giây")
+        self.motion_pre_roll_spin.setValue(motion_cfg["pre_roll_s"])
+        self.motion_pre_roll_spin.setAlignment(Qt.AlignRight)
+        self.motion_pre_roll_spin.setFixedWidth(110)
+
         motion_note = QLabel(
-            "Độ nhạy Thấp ít báo nhầm, Cao dễ bắt chuyển động nhỏ. Muốn chỉ theo dõi "
-            "một vùng (vd quanh cửa), đặt khoá \"roi\" trong config.json — xem README."
+            "Camera tự xoay (theo dõi chuyển động, tự quay về vị trí...) được bỏ qua tự "
+            "động — nếu không cần, nên tắt các tính năng đó trong app Ezviz. Muốn chỉ "
+            "theo dõi một vùng (vd quanh cửa), đặt khoá \"roi\" trong config.json — xem README."
         )
         motion_note.setObjectName("note")
         motion_note.setWordWrap(True)
@@ -334,6 +356,21 @@ class SettingsDialog(QDialog):
             _make_row("Ghi thêm sau chuyển động cuối",
                       "Ghi tiếp bao lâu sau lần chuyển động cuối cùng",
                       self.motion_post_roll_spin),
+        ]))
+        pm.addWidget(_section("Giảm báo nhầm"))
+        pm.addWidget(_make_card([
+            _make_row("Bỏ qua thay đổi ánh sáng",
+                      "Đèn cửa, đèn pha xe quét qua không bị tính là chuyển động",
+                      self.motion_ignore_light_check),
+            _make_row("Chuyển động phải kéo dài",
+                      "Bỏ qua vệt sáng/chuyển động ngắn hơn mức này",
+                      self.motion_min_duration_spin),
+        ]))
+        pm.addWidget(_section("Đoạn trước chuyển động"))
+        pm.addWidget(_make_card([
+            _make_row("Ghi thêm đoạn trước chuyển động",
+                      "Bật thì chạy thêm 1 kết nối luồng nhẹ liên tục (không có tiếng)",
+                      self.motion_pre_roll_spin),
         ]))
         pm.addWidget(motion_note)
         pm.addStretch(1)
@@ -453,6 +490,9 @@ class SettingsDialog(QDialog):
             "enabled": self.motion_check.isChecked(),
             "sensitivity": self.motion_sens_combo.currentData(),
             "post_roll_s": self.motion_post_roll_spin.value(),
+            "min_duration_s": self.motion_min_duration_spin.value(),
+            "ignore_light_changes": self.motion_ignore_light_check.isChecked(),
+            "pre_roll_s": self.motion_pre_roll_spin.value(),
         }
 
     # ---------- thư mục lưu ghi hình (Sprint 5.5) ----------

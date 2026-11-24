@@ -226,3 +226,15 @@ def test_summarize_usage(tmp_path):
     assert u["sessions"] == 2
     assert u["auto"] >= 6 * MB and u["protected"] >= 10 * MB
     assert u["total"] == u["auto"] + u["protected"]
+
+
+# ---------------- đoạn pre-roll (.ts) ----------------
+
+
+def test_preroll_ts_file_counts_toward_size_and_is_deleted_with_the_session(tmp_path):
+    d = auto(tmp_path, 1, 3, 100)
+    (d / "00-truoc-chuyen-dong.ts").write_bytes(b"\0" * (2 * MB))
+    entry = scan_sessions(tmp_path)[0]
+    assert entry.size_bytes >= 5 * MB                      # 3 MB .mkv + 2 MB .ts
+    delete_session_dir(d)
+    assert not d.exists()                                  # .ts cũng bị xoá, thư mục rỗng nên gỡ luôn

@@ -6,6 +6,6 @@ bản Release trên GitHub).
 """
 
 APP_NAME = "EzvizFloatCam"
-APP_VERSION = "0.10.0"
+APP_VERSION = "0.11.0"
 GITHUB_URL = "https://github.com/tuananh511/ezviz-float-cam"
 LICENSE_NAME = "MIT License"

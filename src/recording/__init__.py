@@ -83,6 +83,7 @@ from .storage import (
 from .naming import (
     KIND_AUTO,
     KIND_MANUAL,
+    PRE_ROLL_FILENAME,
     is_session_dir_name,
     make_segment_name,
     make_session_name,
@@ -131,6 +132,7 @@ __all__ = [
     "is_eligible_for_cleanup",
     "KIND_AUTO",
     "KIND_MANUAL",
+    "PRE_ROLL_FILENAME",
     "is_session_dir_name",
     "make_segment_name",
     "make_session_name",
