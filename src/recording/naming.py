@@ -32,13 +32,7 @@ __all__ = [
     "make_segment_name",
     "is_session_dir_name",
     "is_legacy_motion_dir_name",
-    "PRE_ROLL_FILENAME",
 ]
-
-# Đoạn ghi TRƯỚC khi phát hiện chuyển động (nếu bật "pre-roll"): một file
-# MPEG-TS nằm đầu thư mục phiên (tên bắt đầu bằng "00-" nên xếp trước các đoạn
-# .mkv đặt theo giờ).
-PRE_ROLL_FILENAME = "00-truoc-chuyen-dong.ts"
 
 KIND_MANUAL = "manual"
 KIND_AUTO = "auto"

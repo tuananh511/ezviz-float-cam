@@ -12,7 +12,7 @@ Quy tắc an toàn (đây là code XOÁ FILE, nên chặt tay):
   DISK_FULL), `protected=False`. Ghi THỦ CÔNG luôn `protected=True` nên
   không bao giờ bị xoá. Thư mục không có/hỏng session.json -> bỏ qua.
 - Phiên đang ghi (do app truyền vào `exclude_dirs`) không bao giờ bị xoá.
-- Chỉ xoá đúng các file do app tạo (*.mkv, *.ts đoạn pre-roll, session.json, thong-tin.txt, file
+- Chỉ xoá đúng các file do app tạo (*.mkv, session.json, thong-tin.txt, file
   tạm của session.json) rồi `rmdir` nếu thư mục rỗng; nếu còn file lạ thì
   để lại thư mục, không xoá đệ quy.
 - Xoá từ phiên CŨ NHẤT trước, và dừng ngay khi đã xuống dưới mục tiêu.
@@ -92,7 +92,7 @@ class SessionEntry:
     deletable: bool = False              # đủ điều kiện bị xoá theo quy tắc ở đầu file
 
 
-_OWN_SUFFIXES = (".mkv", ".ts")   # .ts = đoạn "trước chuyển động" (pre-roll)
+_OWN_SUFFIXES = (".mkv",)
 _OWN_NAMES = (SESSION_METADATA_FILENAME, SUMMARY_FILENAME)
 
 

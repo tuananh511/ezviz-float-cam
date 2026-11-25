@@ -32,10 +32,7 @@ def test_roundtrip_of_default_values(tmp_path):
     rtsp = d.get_rtsp_config()
     assert rtsp == {"ip": "192.168.1.100", "port": 554, "username": "admin",
                     "password": "", "stream_type": "sub", "channel": "ch1"}
-    assert d.get_motion_config() == {
-        "enabled": True, "sensitivity": "medium", "post_roll_s": 15,
-        "min_duration_s": 2.0, "ignore_light_changes": True, "pre_roll_s": 0,
-    }
+    assert d.get_motion_config() == {"enabled": True, "sensitivity": "medium", "post_roll_s": 15}
     assert d.get_retention_settings() == {"enabled": True, "max_gb": 20}
 
 
@@ -46,9 +43,7 @@ def test_values_from_config_are_reflected(tmp_path):
              retention={"enabled": False, "max_gb": 75})
     assert d.get_rtsp_config()["stream_type"] == "main"
     assert d.get_rtsp_config()["port"] == 8554
-    assert d.get_motion_config()["enabled"] is False
-    assert d.get_motion_config()["sensitivity"] == "high"
-    assert d.get_motion_config()["post_roll_s"] == 40
+    assert d.get_motion_config() == {"enabled": False, "sensitivity": "high", "post_roll_s": 40}
     assert d.get_retention_settings() == {"enabled": False, "max_gb": 75}
 
 
@@ -62,13 +57,7 @@ def test_user_changes_flow_into_getters(tmp_path):
     d.retention_spin.setValue(50)
     assert d.get_rtsp_config()["ip"] == "10.0.0.7"
     assert d.get_rtsp_config()["stream_type"] == "main"
-    d.motion_min_duration_spin.setValue(3.5)
-    d.motion_ignore_light_check.setChecked(False)
-    d.motion_pre_roll_spin.setValue(8)
-    assert d.get_motion_config() == {
-        "enabled": False, "sensitivity": "low", "post_roll_s": 60,
-        "min_duration_s": 3.5, "ignore_light_changes": False, "pre_roll_s": 8,
-    }
+    assert d.get_motion_config() == {"enabled": False, "sensitivity": "low", "post_roll_s": 60}
     assert d.get_retention_settings()["max_gb"] == 50
 
 
@@ -150,16 +139,3 @@ def test_dialog_renders_every_tab(tmp_path):
     for i in range(3):
         d._tabs.setCurrentIndex(i)
         assert not d.grab().toImage().isNull()
-
-
-def test_new_motion_values_from_config_are_reflected(tmp_path):
-    d = make(tmp_path, motion={"min_duration_s": 4.0, "ignore_light_changes": False, "pre_roll_s": 12})
-    assert d.motion_min_duration_spin.value() == 4.0
-    assert d.motion_ignore_light_check.isChecked() is False
-    assert d.motion_pre_roll_spin.value() == 12
-
-
-def test_pre_roll_zero_shows_as_off(tmp_path):
-    d = make(tmp_path)
-    assert d.motion_pre_roll_spin.value() == 0
-    assert d.motion_pre_roll_spin.specialValueText() == "Tắt"

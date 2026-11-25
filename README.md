@@ -32,8 +32,7 @@ Ngoài xem trực tiếp, app còn có:
 **Ghi hình**
 
 - Ghi thủ công (REC): luồng `main`, mỗi đoạn tối đa 5 phút, lưu `.mkv`.
-- Ghi tự động theo chuyển động: độ nhạy 3 mức, thời gian ghi thêm sau chuyển động cuối, bỏ qua thay đổi ánh sáng, bỏ qua chuyển động quá ngắn, bỏ qua lúc camera tự xoay, có thể giới hạn vùng theo dõi (ROI).
-- Tuỳ chọn ghi thêm **đoạn ngắn TRƯỚC khi phát hiện chuyển động** (pre-roll).
+- Ghi tự động theo chuyển động: độ nhạy 3 mức, thời gian ghi thêm sau chuyển động cuối, có thể giới hạn vùng theo dõi (ROI).
 - Kiểm tra dung lượng ổ đĩa trước mỗi đoạn: dưới 1 GiB trống thì từ chối ghi (an toàn cho ổ hệ thống).
 - Tự xoá bản ghi tự động cũ nhất khi thư mục ghi hình vượt ngưỡng (mặc định 20 GB).
 - Mỗi lần ghi có thư mục tên theo ngày giờ và file `thong-tin.txt` tiếng Việt để xem nhanh.
@@ -75,37 +74,10 @@ Các nút điều khiển chỉ hiện khi chuột ở trong cửa sổ. Chấm 
 App lấy mẫu khung hình đang xem (~2 khung/giây), so với "nền" để phát hiện chuyển động. Khi có chuyển động ở vài lần lấy mẫu liên tiếp, app bắt đầu một phiên ghi riêng, và ghi thêm `post_roll_s` giây sau chuyển động cuối rồi dừng.
 
 - **Độc lập với REC thủ công**: ghi tự động dùng một recorder riêng (phiên libVLC riêng, thư mục riêng đuôi `_TuDong`). Bật/tắt cái này không ảnh hưởng cái kia, file không bao giờ ghi đè nhau.
-- **Chống báo nhầm** (xem thêm mục "Giảm báo nhầm" bên dưới): bỏ qua vệt sáng (đèn cửa, đèn pha), bỏ qua chuyển động quá ngắn, và bỏ qua lúc camera tự xoay hoặc tự đổi sáng toàn khung (chuyển IR ngày/đêm).
+- **Chống báo nhầm**: cần chuyển động ở nhiều lần lấy mẫu liên tiếp; việc camera tự đổi sáng toàn khung hoặc chuyển chế độ IR ngày/đêm không bị tính là chuyển động.
 - **Khi lỗi** (đầy ổ đĩa, mất luồng): huy hiệu đổi thành `AUTO REC LỖI` khoảng 15 giây, app nghỉ 60 giây rồi mới thử lại, không hiện hộp thoại làm phiền.
 - **Độ nhạy**: chỉnh trong Cài đặt (`Thấp` / `Vừa` / `Cao`). Nếu báo nhầm nhiều thì giảm độ nhạy hoặc khoanh vùng theo dõi; nếu bỏ sót thì tăng.
 - **Vùng theo dõi (ROI)**: đặt `roi` trong `config.json`, ví dụ chỉ theo dõi nửa phải khung hình quanh cửa: `"roi": [0.5, 0.0, 1.0, 1.0]` (tỉ lệ 0–1: trái, trên, phải, dưới).
-
-### Giảm báo nhầm
-
-Ghi tự động có 4 lớp lọc, chỉnh trong **Cài đặt → Chuyển động**:
-
-| Tình huống hay gặp | Cách app xử lý | Chỉnh ở đâu |
-|---|---|---|
-| Đèn cửa bật, đèn pha xe quét qua (ánh sáng đổi nhưng không có người) | **Bỏ qua thay đổi ánh sáng**: so sánh sau khi trừ độ lệch sáng trung bình của từng ô nhỏ, nên chỉ phần *cấu trúc* hình ảnh đổi (người/vật đi vào) mới tính, vệt sáng thì bỏ qua | Công tắc "Bỏ qua thay đổi ánh sáng" (`motion.ignore_light_changes`) |
-| Vệt sáng/chuyển động thoáng qua | **Chuyển động phải kéo dài** ít nhất N giây mới bắt đầu ghi (cho phép vài nhịp "đứng yên" xen giữa khi người đi chậm) | "Chuyển động phải kéo dài" (`motion.min_duration_s`, mặc định 2 giây) |
-| Camera tự xoay (theo dõi chuyển động, tự quay về vị trí, quét 360°) làm đổi gần như toàn khung | Nhận ra "camera đang di chuyển", **tạm dừng phát hiện** cho tới `camera_settle_s` giây sau lần xoay cuối, rồi lấy lại khung hình làm nền | `motion.camera_settle_s` (mặc định 10 giây) |
-| Đổi sáng toàn khung (camera tự chỉnh phơi sáng, chuyển IR) | Coi là đổi cảnh, không phải chuyển động, cũng tạm dừng như trên | — |
-
-Lưu ý:
-
-- Do bỏ qua ánh sáng, một vật **đồng màu, đặc, che kín cả ô** (vd người mặc đồ trơn đứng sát camera) chủ yếu được nhận ra qua phần *viền* của nó. Nếu thấy bỏ sót người, tắt "Bỏ qua thay đổi ánh sáng" hoặc tăng độ nhạy.
-- Nếu camera tự xoay khi đang theo dõi người thật, thời điểm xoay không được tính là chuyển động; bản ghi tự dừng sau `post_roll_s` kể từ chuyển động thật cuối cùng.
-- Cách dứt điểm nhất cho camera tự xoay là **tắt tính năng theo dõi chuyển động / tự quay về vị trí / tự hiệu chỉnh** trong app Ezviz (tên mục tuỳ đời camera) nếu bạn không cần.
-- Nếu vẫn báo nhầm do một vùng cố định (cửa kính, cây cối, màn hình TV...), khoanh vùng theo dõi bằng `motion.roi`.
-
-### Ghi đoạn trước chuyển động (pre-roll)
-
-Ghi tự động chỉ bắt đầu sau khi chuyển động đã kéo dài đủ lâu, nên vài giây đầu của sự kiện dễ bị mất. Đặt **"Ghi thêm đoạn trước chuyển động"** (`motion.pre_roll_s`, 0–30 giây, mặc định **tắt**) để app giữ một bộ đệm cuốn chiếu và ghi thêm đoạn ngay trước khi phát hiện.
-
-- Cách hoạt động: một phiên VLC riêng chạy liên tục trên luồng **nhẹ (sub)**, ghi các đoạn ~2 giây vào thư mục tạm (`%TEMP%\EzvizFloatCam\preroll`) và tự xoá đoạn cũ; khi có chuyển động, các đoạn gần nhất được ghép thành `00-truoc-chuyen-dong.ts` trong thư mục lần ghi.
-- **Đánh đổi**: thêm một kết nối RTSP liên tục tới camera (nếu camera giới hạn số kết nối, có thể gây rớt kết nối) và ghi đĩa liên tục một lượng nhỏ (cỡ bitrate luồng nhẹ, ghi đè trong thư mục tạm). Vì vậy mặc định tắt.
-- Đoạn trước chuyển động có chất lượng luồng nhẹ và **không có tiếng**; có thể hở khoảng 1–3 giây giữa cuối đoạn này và lúc bản ghi chính bắt đầu.
-- Lỗi bộ đệm (mất kết nối, thiếu VLC...) chỉ làm mất đoạn pre-roll; ghi tự động vẫn chạy bình thường, bộ đệm tự khởi động lại sau 15 giây.
 
 ## Thư mục ghi hình
 
@@ -114,7 +86,6 @@ Mặc định lưu ở `%USERPROFILE%\Videos\EzvizFloatCam` (đổi trong Cài �
 ```
 Videos\EzvizFloatCam\
 ├─ 2026-11-22_14-30-05_TuDong\      ← ghi TỰ ĐỘNG khi có chuyển động
-│   ├─ 00-truoc-chuyen-dong.ts      ← (chỉ khi bật pre-roll) đoạn ngay TRƯỚC khi phát hiện chuyển động
 │   ├─ 14-30-05.mkv                 ← mỗi đoạn tối đa 5 phút, đặt tên theo giờ bắt đầu
 │   ├─ 14-35-05.mkv
 │   ├─ thong-tin.txt                ← ghi chú dễ đọc: bắt đầu/kết thúc, thời lượng, dung lượng, trạng thái
@@ -153,18 +124,14 @@ File nằm ở `%APPDATA%\EzvizFloatCam\config.json`, tự tạo ở lần chạ
 | `motion.post_roll_s` | `15` | Ghi thêm sau chuyển động cuối, 5–300 giây |
 | `motion.stream_type` | `main` | Luồng để ghi tự động: `main` (nét) hoặc `sub` (nhẹ hơn, dùng khi camera giới hạn số kết nối cùng lúc) |
 | `motion.roi` | `null` | `null` = cả khung; hoặc `[x0, y0, x1, y1]` tỉ lệ 0–1 |
-| `motion.min_duration_s` | `2.0` | Chuyển động phải kéo dài ít nhất bấy nhiêu giây mới bắt đầu ghi (0.5–10) |
-| `motion.ignore_light_changes` | `true` | Bỏ qua thay đổi ánh sáng cục bộ (đèn cửa, đèn pha) |
-| `motion.camera_settle_s` | `10` | Camera tự xoay/đổi cảnh thì tạm dừng phát hiện bấy nhiêu giây sau lần cuối (0–120) |
-| `motion.pre_roll_s` | `0` | Ghi thêm đoạn trước chuyển động, 0 = tắt, tối đa 30 giây |
 | `retention.enabled` | `true` | Bật/tắt tự xoá bản ghi tự động cũ |
 | `retention.max_gb` | `20` | Ngưỡng dung lượng thư mục ghi hình, 1–5000 GB |
 
 ## Giới hạn đã biết
 
-- Ghi tự động bắt đầu **sau** khi phát hiện chuyển động (và sau `min_duration_s`), nên vài giây đầu của sự kiện có thể không có trong file; bật pre-roll để bù (có đánh đổi, xem trên).
+- Ghi tự động bắt đầu **sau** khi phát hiện chuyển động, nên vài giây đầu của sự kiện có thể không có trong file (chưa có pre-roll).
 - Người đứng yên rất lâu sẽ bị "nền" hấp thụ dần, ghi tự động sẽ dừng sau `post_roll_s`.
-- Ban đêm / thiếu sáng thì nhiễu hình tăng, phát hiện chuyển động kém ổn định hơn. Việc nhận ra "camera đang xoay" dựa trên heuristic, chưa được thử với mọi đời camera Ezviz.
+- Ban đêm / thiếu sáng thì nhiễu hình tăng, phát hiện chuyển động kém ổn định hơn.
 - Ghi tay và ghi tự động cùng chạy sẽ mở thêm một kết nối RTSP tới camera; nếu camera rớt kết nối thì đặt `motion.stream_type` là `sub`.
 - Xoá tự động là vĩnh viễn (xem mục trên).
 - Chỉ hỗ trợ chính thức Windows 10/11. Một phần code có fallback để dev/test trên Linux/macOS nhưng không phải môi trường được hỗ trợ.
@@ -225,7 +192,6 @@ src/
   recorder.py             EmergencyRecorder: ghi theo đoạn, dùng chung cho ghi tay (kind=manual) và ghi tự động (kind=auto)
   motion.py               phát hiện chuyển động + chính sách bắt đầu/dừng ghi (stdlib thuần)
   motion_controller.py    nối StreamWidget -> motion -> recorder tự động (Qt)
-  preroll_buffer.py       bộ đệm cuốn chiếu (VLC livehttp) cho đoạn trước chuyển động (Qt + libVLC)
   cleanup_controller.py   chạy dọn dẹp dung lượng định kỳ (Qt)
   recording/              domain + policy ghi hình (stdlib thuần, không phụ thuộc PySide6/VLC)
     session.py            RecordingSession/Segment, state machine STARTING→RECORDING→STOPPING→STOPPED/FAILED/DISK_FULL
@@ -237,7 +203,6 @@ src/
     startup.py            điểm gọi khôi phục lúc khởi động app
     retention.py          policy: phiên nào đủ điều kiện bị dọn
     cleanup.py            quét thư mục, lập kế hoạch và xoá bản ghi cũ vượt ngưỡng
-    preroll.py            dựng chuỗi sout bộ đệm, chọn/ghép đoạn đệm (stdlib thuần)
 tests/                    pytest, ánh xạ theo từng module
 config/default_config.json
 assets/app_icon.ico

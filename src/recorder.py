@@ -134,7 +134,7 @@ from recording import (
     unique_session_name,
     write_summary,
 )
-from recording.naming import PRE_ROLL_FILENAME, make_segment_name
+from recording.naming import make_segment_name
 
 _SUBDIR = "EzvizFloatCam"
 
@@ -218,20 +218,6 @@ class EmergencyRecorder(QObject):
 
     def is_recording(self) -> bool:
         return self.media_player is not None
-
-    def write_preroll_clip(self, data: bytes) -> bool:
-        """Ghi đoạn "trước chuyển động" (MPEG-TS, xem recording/preroll.py) vào
-        thư mục phiên đang ghi. Chỉ gọi sau start() thành công. Trả về True nếu
-        đã ghi; không bao giờ raise — thiếu đoạn này không ảnh hưởng ghi hình."""
-        if not data or not self.is_recording() or self._session_dir is None:
-            return False
-        try:
-            (self._session_dir / PRE_ROLL_FILENAME).write_bytes(data)
-        except OSError as exc:
-            print(f"[WARN] Không ghi được đoạn trước chuyển động: {exc}")
-            return False
-        self._persist_metadata()     # cập nhật thong-tin.txt cho có dòng pre-roll
-        return True
 
     def active_session_dir(self) -> Path | None:
         """Thư mục phiên đang ghi, hoặc None nếu không ghi — dùng để loại

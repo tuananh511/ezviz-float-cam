@@ -30,7 +30,6 @@ from recorder import EmergencyRecorder
 from recording import KIND_AUTO
 from motion import get_motion_config
 from motion_controller import MotionRecordingController
-from preroll_buffer import PreRollBuffer
 from cleanup_controller import RecordingCleanupController
 from config_loader import save_config
 from windows_blur import enable_acrylic_blur
@@ -162,12 +161,8 @@ class GlassWindow(QWidget):
         self.auto_recorder.recording_started.connect(lambda _p: self.overlay.update())
         self.auto_recorder.recording_stopped.connect(lambda _p: self.overlay.update())
         self.auto_recorder.recording_error.connect(self._on_auto_recording_error)
-        # Bộ đệm cuốn chiếu cho "ghi thêm đoạn TRƯỚC chuyển động". Chỉ thật sự
-        # chạy khi motion.pre_roll_s > 0 (mặc định tắt) — xem preroll_buffer.py.
-        self.preroll = PreRollBuffer(self)
         self.motion = MotionRecordingController(
             self.stream_widget, self.auto_recorder, lambda: self.config, self,
-            preroll=self.preroll,
         )
         self.motion.state_changed.connect(self.overlay.update)
         self.motion.start()
