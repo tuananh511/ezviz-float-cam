@@ -24,3 +24,5 @@ config/local_config.json
 src/debug_frame.png
 src/debug_qimage.png
 dist_installer/
+
+src/debug_*.png
